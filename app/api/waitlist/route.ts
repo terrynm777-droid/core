@@ -1,3 +1,4 @@
+// app/api/waitlist/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -21,6 +22,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // Debug env (remove later)
+    console.log("SUPABASE_URL", process.env.SUPABASE_URL);
+    console.log(
+      "HAS_SERVICE_ROLE_KEY",
+      !!process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
     const userAgent = req.headers.get("user-agent") ?? null;
@@ -43,12 +51,12 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("supabase error", error);
-      return NextResponse.json({ ok: false }, { status: 500 });
+      return NextResponse.json({ ok: false, error: "db_error" }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
     console.error("waitlist POST error", err);
-    return NextResponse.json({ ok: false }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "server_error" }, { status: 500 });
   }
 }
