@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 function normalizeEmail(raw: unknown) {
   if (typeof raw !== "string") return null;
@@ -25,7 +26,25 @@ export async function POST(req: Request) {
     const userAgent = req.headers.get("user-agent") ?? null;
     const referrer = req.headers.get("referer") ?? null;
 
-    console.log("[waitlist]", { email, ip, userAgent, referrer });
+    const supabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { error } = await supabase.from("waitlist").upsert(
+      {
+        email,
+        ip,
+        user_agent: userAgent,
+        referrer,
+      },
+      { onConflict: "email" }
+    );
+
+    if (error) {
+      console.error("supabase error", error);
+      return NextResponse.json({ ok: false }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
