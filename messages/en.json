@@ -1,0 +1,24 @@
+{
+  "home": {
+    "title": "Core",
+    "subtitle": "The core of global markets, stocks, and financial discussion. Clean signal. Zero noise.",
+    "join": "Join Early",
+    "learn": "Learn More",
+    "footer": "Built for traders · investors · students"
+  },
+  "about": {
+    "title": "About Core",
+    "body": "Core is a clean space for signal-first market discussion.",
+    "back": "Back home"
+  },
+  "waitlist": {
+    "title": "Join Core",
+    "subtitle": "Early access for traders who value signal over noise.",
+    "placeholder": "you@email.com",
+    "submit": "Request Access",
+    "loading": "Submitting...",
+    "success": "You're on the list.",
+    "error": "Something went wrong. Try again.",
+    "back": "Back home"
+  }
+}
