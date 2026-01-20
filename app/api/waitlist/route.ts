@@ -1,62 +1,79 @@
-// app/api/waitlist/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function normalizeEmail(raw: unknown) {
-  if (typeof raw !== "string") return null;
-  const email = raw.trim().toLowerCase();
-  if (email.length < 3 || email.length > 254) return null;
-  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  return ok ? email : null;
+type WaitlistPayload = {
+  email?: string;
+  name?: string;
+  source?: string; // optional (e.g., "landing", "vercel", etc.)
+};
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const email = normalizeEmail((body as any).email);
+    const body = (await req.json()) as WaitlistPayload;
 
-    if (!email) {
+    const emailRaw = (body.email ?? "").trim().toLowerCase();
+    const nameRaw = (body.name ?? "").trim();
+    const sourceRaw = (body.source ?? "website").trim();
+
+    if (!emailRaw || !isValidEmail(emailRaw)) {
       return NextResponse.json(
-        { ok: false, error: "invalid_email" },
+        { ok: false, error: "Invalid email." },
         { status: 400 }
       );
     }
 
-    // Debug env (remove later)
-    console.log("SUPABASE_URL", process.env.SUPABASE_URL);
-    console.log(
-      "HAS_SERVICE_ROLE_KEY",
-      !!process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-    const userAgent = req.headers.get("user-agent") ?? null;
-    const referrer = req.headers.get("referer") ?? null;
-
-    const supabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    const { error } = await supabase.from("waitlist").upsert(
-      {
-        email,
-        ip,
-        user_agent: userAgent,
-        referrer,
-      },
-      { onConflict: "email" }
-    );
-
-    if (error) {
-      console.error("supabase error", error);
-      return NextResponse.json({ ok: false, error: "db_error" }, { status: 500 });
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { ok: false, error: "Server misconfigured (missing Supabase env)." },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // NOTE: This assumes you have a table named `waitlist`
+    // with columns like:
+    // - email (text, unique recommended)
+    // - name (text, nullable)
+    // - source (text, nullable)
+    // - created_at (timestamp, default now())
+    //
+    // If your table columns differ, tell me the exact column names.
+
+    const { error } = await supabase.from("waitlist").insert([
+      {
+        email: emailRaw,
+        name: nameRaw || null,
+        source: sourceRaw || null
+      }
+    ]);
+
+    // If email is unique, Supabase/Postgres might throw duplicate errors
+    if (error) {
+      // Postgres unique violation code: 23505
+      const msg = String(error.message || "");
+      if (msg.includes("duplicate") || msg.includes("23505")) {
+        return NextResponse.json({ ok: true, alreadyJoined: true });
+      }
+
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("waitlist POST error", err);
-    return NextResponse.json({ ok: false, error: "server_error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "Bad request." },
+      { status: 400 }
+    );
   }
 }
