@@ -28,16 +28,42 @@ function store(): Post[] {
   return globalThis.__corePosts;
 }
 
+function makeId(): string {
+  // Works in Node 18+ (Vercel) and locally. Safe fallback if crypto fails.
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `p_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+
 export function listPosts(): Post[] {
-  return store().slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return store()
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export function addPost(content: string): Post {
+  const text = content.trim();
+
   const post: Post = {
-    id: crypto.randomUUID(),
-    content,
+    id: makeId(),
+    content: text,
     createdAt: new Date().toISOString(),
   };
+
   store().push(post);
   return post;
+}
+
+export function getPostById(id: string): Post | null {
+  return store().find((p) => p.id === id) ?? null;
+}
+
+export function deletePostById(id: string): boolean {
+  const s = store();
+  const idx = s.findIndex((p) => p.id === id);
+  if (idx === -1) return false;
+  s.splice(idx, 1);
+  return true;
 }

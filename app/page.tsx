@@ -1,3 +1,4 @@
+// app/page.tsx
 import Link from "next/link";
 import Image from "next/image";
 
@@ -13,6 +14,7 @@ export default function Home() {
             width={40}
             height={40}
             className="rounded-xl"
+            priority
           />
           <div className="leading-tight">
             <div className="text-lg font-semibold tracking-tight">CORE</div>
@@ -22,10 +24,16 @@ export default function Home() {
 
         {/* Language switch (static for now) */}
         <div className="flex items-center gap-2">
-          <button className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm">
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
+          >
             🇺🇸 EN
           </button>
-          <button className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm">
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
+          >
             🇯🇵 日本語
           </button>
         </div>
@@ -42,13 +50,14 @@ export default function Home() {
 
             <p className="mt-4 text-base md:text-lg text-[#3E4C47] max-w-xl">
               CORE is a social platform for people who want clarity: live market
-              signals, searchable stocks, and conversations that stay grounded
-              in evidence—not hype.
+              signals, searchable stocks, and conversations grounded in evidence
+              — not hype.
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              {/* IMPORTANT: Enter Chat goes to /feed */}
               <Link
-                href="/waitlist"
+                href="/feed"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95 shadow-sm"
               >
                 Enter Chat
@@ -70,7 +79,10 @@ export default function Home() {
                 Stock search
               </span>
               <span className="px-3 py-1 rounded-full bg-white border border-[#D7E4DD]">
-                Verified reasoning (future)
+                Calm, high-signal discussion
+              </span>
+              <span className="px-3 py-1 rounded-full bg-white border border-[#D7E4DD]">
+                CORE Verified (future)
               </span>
             </div>
 
@@ -117,10 +129,25 @@ export default function Home() {
                   >
                     <div className="text-sm">{h}</div>
                     <div className="text-xs text-[#6B7A74] mt-1">
-                      Tap later → opens the chat thread (future)
+                      Later → opens the chat thread (future)
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="text-sm font-semibold">Stock search</div>
+              <div className="mt-3 flex gap-2">
+                <div className="flex-1 rounded-2xl border border-[#E5EFEA] bg-white px-4 py-3 text-sm text-[#6B7A74]">
+                  Search tickers (e.g., NVDA, TSLA, 7203.T)
+                </div>
+                <div className="rounded-2xl bg-[#0B0F0E] text-white px-5 py-3 text-sm">
+                  Search
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-[#6B7A74]">
+                Later: connects to real market data + news.
               </div>
             </div>
           </div>
@@ -131,10 +158,13 @@ export default function Home() {
       <footer className="mx-auto max-w-6xl px-6 pb-10 pt-6 text-xs text-[#6B7A74] flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
         <div>© {new Date().getFullYear()} CORE</div>
         <div className="flex gap-4">
+          <Link href="/feed" className="hover:underline">
+            Feed
+          </Link>
           <Link href="/about" className="hover:underline">
             About
           </Link>
-          <Link href="/waitlist" className="hover:underline">
+          <Link href="/feed" className="hover:underline">
             Waitlist
           </Link>
         </div>

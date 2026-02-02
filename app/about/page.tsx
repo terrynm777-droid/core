@@ -1,17 +1,11 @@
-import Link from "next/link";
-
-export default function AboutPage() {
+export default function About() {
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-6">
-      <h1 className="text-4xl font-bold mb-4">About Core</h1>
-      <p className="text-gray-400 text-center max-w-xl mb-10">
-        Core is a clean, global finance community: discussion, news context,
-        and learning—built to reduce noise and increase signal.
-      </p>
+    <main className="min-h-screen p-6">
+      <h1 className="text-2xl font-semibold">About CORE</h1>
 
-      <Link href="/" className="text-gray-300 underline">
-        Back home
-      </Link>
+      <p className="mt-4 text-gray-600">
+        This page will be redesigned later.
+      </p>
     </main>
   );
 }
