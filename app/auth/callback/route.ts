@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function safeNext(raw: string | null) {
+  if (!raw) return "/feed";
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (!decoded.startsWith("/")) return "/feed";
+    if (decoded === "/") return "/feed";
+    return decoded;
+  } catch {
+    return "/feed";
+  }
+}
+
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
+export async function GET(req: Request) {
+  const url = new URL(req.url);
 
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") || "/feed";
+  const next = safeNext(url.searchParams.get("next"));
 
   if (!code) {
     return NextResponse.redirect(new URL(`/auth?next=${encodeURIComponent(next)}`, url.origin));

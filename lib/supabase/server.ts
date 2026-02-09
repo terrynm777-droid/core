@@ -1,9 +1,8 @@
-import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export async function createClient() {
-  const cookieStore = await cookies(); // <-- fix: cookies() can be async
-  const store = cookieStore as any;    // <-- fix: TS readonly cookie type
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,15 +10,16 @@ export async function createClient() {
     {
       cookies: {
         getAll() {
-          return store.getAll?.() ?? [];
+          return cookieStore.getAll();
         },
-        setAll(cookiesToSet: any[]) {
+        setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              store.set?.(name, value, options);
+              cookieStore.set(name, value, options);
             });
           } catch {
-            // ignore if cookies are read-only in this context
+            // Can be called from Server Components where setting cookies isn't allowed.
+            // That's fine; middleware/route handlers are what matter for auth.
           }
         },
       },
