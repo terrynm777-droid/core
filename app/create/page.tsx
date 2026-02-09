@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+const MAX_CHARS = 20000;
 
 export default function CreatePostPage() {
   const router = useRouter();
@@ -9,19 +11,22 @@ export default function CreatePostPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const trimmed = useMemo(() => content.trim(), [content]);
+  const count = trimmed.length;
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
 
-    const text = content.trim();
-    if (!text) return setErr("Type something first.");
+    if (!trimmed) return setErr("Type something first.");
+    if (count > MAX_CHARS) return setErr(`Max ${MAX_CHARS.toLocaleString()} chars.`);
 
     setLoading(true);
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ content: trimmed }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -48,10 +53,13 @@ export default function CreatePostPage() {
             onChange={(e) => setContent(e.target.value)}
             placeholder="What’s the signal?"
             className="w-full min-h-[160px] rounded-2xl border border-[#D7E4DD] bg-white p-4 outline-none focus:ring-2 focus:ring-[#22C55E]"
-            maxLength={500}
+            maxLength={MAX_CHARS}
           />
+
           <div className="flex items-center justify-between text-xs text-[#6B7A74]">
-            <span>{content.trim().length}/500</span>
+            <span>
+              {count.toLocaleString()}/{MAX_CHARS.toLocaleString()}
+            </span>
             {err ? <span className="text-red-600">{err}</span> : <span />}
           </div>
 
