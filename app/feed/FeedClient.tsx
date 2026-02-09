@@ -42,12 +42,20 @@ export default function FeedClient() {
             >
               Post
             </Link>
+
             <button
               onClick={load}
               className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl border border-[#D7E4DD] bg-white font-medium hover:shadow-sm"
             >
               Refresh
             </button>
+
+            <Link
+              href="/auth/signout"
+              className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl border border-[#D7E4DD] bg-white font-medium hover:shadow-sm"
+            >
+              Sign out
+            </Link>
           </div>
         </div>
 
@@ -64,13 +72,8 @@ export default function FeedClient() {
             </div>
           ) : (
             posts.map((p) => (
-              <div
-                key={p.id}
-                className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm"
-              >
-                <div className="text-base font-medium whitespace-pre-wrap">
-                  {p.content}
-                </div>
+              <div key={p.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+                <div className="text-base font-medium whitespace-pre-wrap">{p.content}</div>
                 <div className="mt-3 text-xs text-[#6B7A74]">
                   {new Date(p.createdAt).toLocaleString()}
                 </div>
