@@ -1,12 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 export default function AuthClient({ next }: { next: string }) {
   const supabase = createClient();
 
-  const nextEncoded = encodeURIComponent(next || "/feed");
+  const safeNext = useMemo(() => {
+    if (!next || !next.startsWith("/") || next === "/") return "/feed";
+    return next;
+  }, [next]);
+
+  const nextEncoded = useMemo(() => encodeURIComponent(safeNext), [safeNext]);
 
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -21,7 +30,7 @@ export default function AuthClient({ next }: { next: string }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${nextEncoded}`,
+        redirectTo: `${SITE_URL}/auth/callback?next=${nextEncoded}`,
       },
     });
 
@@ -45,23 +54,20 @@ export default function AuthClient({ next }: { next: string }) {
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${nextEncoded}`,
+        emailRedirectTo: `${SITE_URL}/auth/callback?next=${nextEncoded}`,
       },
     });
 
     setLoading(null);
-
     if (error) setErr(error.message);
-    else setMsg("Check your email for the login link.");
+    else setMsg("Magic link sent. Check your email and open the login link.");
   }
 
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-md">
         <div className="mb-6">
-          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">
-            CORE
-          </div>
+          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">CORE</div>
           <h1 className="mt-2 text-2xl font-semibold">Sign in</h1>
           <p className="mt-2 text-sm text-[#6B7A74]">Signal over noise.</p>
         </div>

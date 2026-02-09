@@ -8,9 +8,7 @@ export default async function FeedPage() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
-  if (!data?.user) {
-    redirect("/auth?next=/feed");
-  }
+  if (!data?.user) redirect("/auth?next=/feed");
 
   return <FeedClient />;
 }
