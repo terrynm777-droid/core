@@ -1,33 +1,42 @@
 import { NextResponse } from "next/server";
-import { createPost, listPosts } from "@/lib/postsStore";
+import { supabase } from "@/lib/supabase";
+
+export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({ posts: listPosts() });
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, content, created_at")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const posts = (data ?? []).map((p) => ({
+    id: p.id,
+    content: p.content,
+    createdAt: p.created_at,
+  }));
+
+  return NextResponse.json({ posts });
 }
 
 export async function POST(req: Request) {
-  try {
-    const body = (await req.json()) as {
-      authorName?: string;
-      content?: string;
-      imageUrl?: string;
-    };
+  const body = (await req.json().catch(() => null)) as { content?: string } | null;
+  const content = body?.content?.trim();
+  if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
+  if (content.length > 500) return NextResponse.json({ error: "max 500 chars" }, { status: 400 });
 
-    if (!body?.content || !body.content.trim()) {
-      return NextResponse.json(
-        { error: "content is required" },
-        { status: 400 }
-      );
-    }
+  const { data, error } = await supabase
+    .from("posts")
+    .insert({ content })
+    .select("id, content, created_at")
+    .single();
 
-    const post = createPost({
-      authorName: body.authorName,
-      content: body.content,
-      imageUrl: body.imageUrl,
-    });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ post }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
+  return NextResponse.json(
+    { post: { id: data.id, content: data.content, createdAt: data.created_at } },
+    { status: 201 }
+  );
 }
