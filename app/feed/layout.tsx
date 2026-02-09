@@ -11,7 +11,7 @@ export default async function FeedLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect("/auth");
+  if (!user) redirect("/auth?next=/feed");
 
   return <>{children}</>;
 }
