@@ -6,13 +6,12 @@ import { createClient } from "@/lib/supabase/client";
 export default function AuthClient({ next }: { next: string }) {
   const supabase = createClient();
 
+  const safeNext = next && next.startsWith("/") && next !== "/" ? next : "/feed";
+  const nextEncoded = useMemo(() => encodeURIComponent(safeNext), [safeNext]);
+
+  // IMPORTANT: use a fixed site URL in prod (Vercel env), fallback to origin locally
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "");
-
-  const nextEncoded = useMemo(
-    () => encodeURIComponent(next || "/feed"),
-    [next]
-  );
 
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
