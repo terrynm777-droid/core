@@ -1,10 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function AuthPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+
+  // If user was sent here from /feed gate, we'll have ?next=/feed
+  // Default must be /feed (NOT /)
+  const next = searchParams.get("next") || "/feed";
+  const nextEncoded = encodeURIComponent(next);
 
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -19,7 +26,7 @@ export default function AuthPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/feed`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${nextEncoded}`,
       },
     });
 
@@ -43,7 +50,7 @@ export default function AuthPage() {
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/feed`,
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${nextEncoded}`,
       },
     });
 
