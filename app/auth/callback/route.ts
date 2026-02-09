@@ -1,8 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export const runtime = "nodejs";
-
 function safeNext(raw: string | null) {
   if (!raw) return "/feed";
   try {
@@ -15,39 +13,40 @@ function safeNext(raw: string | null) {
   }
 }
 
-export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
+export const runtime = "nodejs";
+
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+
   const code = url.searchParams.get("code");
   const next = safeNext(url.searchParams.get("next"));
 
-  // Always redirect to next (default /feed)
-  const redirectUrl = new URL(next, url.origin);
-  const res = NextResponse.redirect(redirectUrl);
+  // If no code, go back to auth
+  if (!code) {
+    return NextResponse.redirect(
+      new URL(`/auth?next=${encodeURIComponent(next)}`, url.origin)
+    );
+  }
 
-  // IMPORTANT: use createServerClient and attach cookie setters to the response
+  // IMPORTANT: create response first so we can attach Set-Cookie to it
+  const response = NextResponse.redirect(new URL(next, url.origin));
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
-          return req.cookies.getAll();
+          return request.cookies.getAll();
         },
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            res.cookies.set(name, value, options);
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
           });
         },
       },
     }
   );
-
-  // If no code, send them back to auth with the same next
-  if (!code) {
-    return NextResponse.redirect(
-      new URL(`/auth?next=${encodeURIComponent(next)}`, url.origin)
-    );
-  }
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
@@ -57,5 +56,5 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  return res;
+  return response;
 }
