@@ -1,22 +1,7 @@
-// app/api/posts/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-type PostRow = {
-  id: string;
-  content: string;
-  created_at: string;
-};
-
-function jsonError(message: string, status = 500) {
-  return NextResponse.json({ error: message }, { status });
-}
-
-function mapPost(p: PostRow) {
-  return { id: p.id, content: p.content, createdAt: p.created_at };
-}
 
 export async function GET() {
   const supabase = await createClient();
@@ -27,55 +12,38 @@ export async function GET() {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) return jsonError(error.message, 500);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({
-    posts: (data ?? []).map((p) => mapPost(p as PostRow)),
+    posts: (data ?? []).map((p) => ({
+      id: p.id,
+      content: p.content,
+      createdAt: p.created_at,
+    })),
   });
 }
 
 export async function POST(req: Request) {
   const supabase = await createClient();
 
-  // 1) Must be authenticated (RLS needs auth.uid())
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (userErr || !user) return jsonError("Not authenticated", 401);
+  const body = (await req.json().catch(() => null)) as { content?: string } | null;
+  const content = body?.content?.trim();
+  if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
+  if (content.length > 20000) return NextResponse.json({ error: "max 20,000 chars" }, { status: 400 });
 
-  // 2) Accept JSON OR form-data
-  let content = "";
-  const contentType = req.headers.get("content-type") ?? "";
-
-  try {
-    if (contentType.includes("application/json")) {
-      const body = (await req.json().catch(() => null)) as { content?: string } | null;
-      content = (body?.content ?? "").trim();
-    } else {
-      const form = await req.formData();
-      content = String(form.get("content") ?? "").trim();
-    }
-  } catch {
-    return jsonError("Invalid request body", 400);
-  }
-
-  // 3) Validate
-  if (!content) return jsonError("content is required", 400);
-  if (content.length > 20000) return jsonError("max 20,000 chars", 400);
-
-  // 4) Insert (include user_id so current RLS policy passes)
   const { data, error } = await supabase
     .from("posts")
     .insert({ content, user_id: user.id })
     .select("id, content, created_at")
     .single();
 
-  if (error) return jsonError(error.message, 500);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json(
-    { post: mapPost(data as PostRow) },
+    { post: { id: data.id, content: data.content, createdAt: data.created_at } },
     { status: 201 }
   );
 }

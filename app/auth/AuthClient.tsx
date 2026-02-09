@@ -1,15 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function AuthClient() {
+export default function AuthClient({ next }: { next: string }) {
   const supabase = createClient();
-  const searchParams = useSearchParams();
 
-  const next = searchParams.get("next") || "/feed";
-  const nextEncoded = encodeURIComponent(next);
+  const nextEncoded = encodeURIComponent(next || "/feed");
 
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -62,7 +59,9 @@ export default function AuthClient() {
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-md">
         <div className="mb-6">
-          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">CORE</div>
+          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">
+            CORE
+          </div>
           <h1 className="mt-2 text-2xl font-semibold">Sign in</h1>
           <p className="mt-2 text-sm text-[#6B7A74]">Signal over noise.</p>
         </div>

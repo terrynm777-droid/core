@@ -1,11 +1,9 @@
-// app/page.tsx
 import Link from "next/link";
 import Image from "next/image";
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
-      {/* Top bar */}
       <header className="mx-auto max-w-6xl px-6 pt-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Image
@@ -22,7 +20,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Language switch (static for now) */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -39,7 +36,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="mx-auto max-w-6xl px-6 pt-14 pb-10">
         <div className="grid gap-10 md:grid-cols-2 items-center">
           <div>
@@ -55,9 +51,8 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              {/* IMPORTANT: Enter Chat goes to /feed */}
               <Link
-                href="/feed"
+                href="/auth?next=/feed"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95 shadow-sm"
               >
                 Enter Chat
@@ -91,7 +86,6 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Right side mock */}
           <div className="rounded-3xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Trending</div>
@@ -154,7 +148,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="mx-auto max-w-6xl px-6 pb-10 pt-6 text-xs text-[#6B7A74] flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
         <div>© {new Date().getFullYear()} CORE</div>
         <div className="flex gap-4">
