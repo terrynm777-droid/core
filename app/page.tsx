@@ -55,9 +55,9 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              {/* IMPORTANT: Enter Chat goes to /feed */}
+              {/* Enter Chat should go to auth with intent */}
               <Link
-                href="/feed"
+                href="/auth?next=/feed"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95 shadow-sm"
               >
                 Enter Chat
