@@ -3,19 +3,16 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (typeof window !== "undefined" ? window.location.origin : "");
-
 export default function AuthClient({ next }: { next: string }) {
   const supabase = createClient();
 
-  const safeNext = useMemo(() => {
-    if (!next || !next.startsWith("/") || next === "/") return "/feed";
-    return next;
-  }, [next]);
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
-  const nextEncoded = useMemo(() => encodeURIComponent(safeNext), [safeNext]);
+  const nextEncoded = useMemo(
+    () => encodeURIComponent(next || "/feed"),
+    [next]
+  );
 
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -30,7 +27,7 @@ export default function AuthClient({ next }: { next: string }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${SITE_URL}/auth/callback?next=${nextEncoded}`,
+        redirectTo: `${siteUrl}/auth/callback?next=${nextEncoded}`,
       },
     });
 
@@ -54,7 +51,7 @@ export default function AuthClient({ next }: { next: string }) {
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
       options: {
-        emailRedirectTo: `${SITE_URL}/auth/callback?next=${nextEncoded}`,
+        emailRedirectTo: `${siteUrl}/auth/callback?next=${nextEncoded}`,
       },
     });
 
