@@ -18,8 +18,7 @@ export async function createClient() {
               cookieStore.set(name, value, options);
             });
           } catch {
-            // Can be called from Server Components where setting cookies isn't allowed.
-            // That's fine; middleware/route handlers are what matter for auth.
+            // ignore in RSC
           }
         },
       },
