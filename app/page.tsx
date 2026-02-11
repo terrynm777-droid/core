@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
+import TrendingLive from "./components/TrendingLive";
+import StockSearch from "./components/StockSearch";
 
 export default function Home({
   searchParams,
@@ -19,29 +21,30 @@ export default function Home({
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
       {/* Top bar */}
       <header className="mx-auto max-w-6xl px-6 pt-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {/* ICON: core-mark with blended background + subtle border */}
-          <div className="rounded-2xl bg-[#F7FAF8] p-1.5 border border-[#D7E4DD]">
+        <div className="flex items-center gap-4">
+          {/* ICON: core-mark with blended bg */}
+          <div className="rounded-2xl bg-[#F7FAF8] p-2 border border-[#D7E4DD]">
             <Image
               src="/brand/core-mark.png"
               alt="CORE mark"
-              width={34}
-              height={34}
+              width={56}
+              height={56}
               className="rounded-xl"
               priority
             />
           </div>
 
-          {/* WORDMARK: core-logo (text logo) */}
+          {/* WORDMARK: core-logo */}
           <div className="leading-tight flex flex-col">
             <Image
               src="/brand/core-logo.png"
               alt="CORE"
-              width={92}
-              height={24}
+              width={140}
+              height={36}
               priority
+              className="opacity-95"
             />
-            <div className="text-xs text-[#4B5A55] -mt-0.5">Signal over noise</div>
+            <div className="text-sm text-[#4B5A55] -mt-0.5">Signal over noise</div>
           </div>
         </div>
 
@@ -112,28 +115,23 @@ export default function Home({
             </p>
           </div>
 
-          {/* Right side mock */}
+          {/* Right side */}
           <div className="rounded-3xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Trending</div>
-              <div className="text-xs text-[#6B7A74]">Mock data (for now)</div>
+              <div className="text-xs text-[#6B7A74]">Live</div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {[
-                { t: "AAPL", p: "+1.2%" },
-                { t: "NVDA", p: "+2.8%" },
-                { t: "TSLA", p: "-0.7%" },
-                { t: "MSFT", p: "+0.4%" },
-              ].map((x) => (
-                <div
-                  key={x.t}
-                  className="rounded-2xl border border-[#E5EFEA] bg-[#F4FBF6] p-4"
-                >
-                  <div className="text-sm font-semibold">{x.t}</div>
-                  <div className="text-xs text-[#3E4C47] mt-1">{x.p}</div>
-                </div>
-              ))}
+            <TrendingLive />
+
+            <div className="mt-6">
+              <div className="text-sm font-semibold">Stock search</div>
+              <div className="mt-3">
+                <StockSearch />
+              </div>
+              <div className="mt-2 text-xs text-[#6B7A74]">
+                Pulls live quotes via your API key.
+              </div>
             </div>
 
             <div className="mt-6">
@@ -154,21 +152,6 @@ export default function Home({
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <div className="text-sm font-semibold">Stock search</div>
-              <div className="mt-3 flex gap-2">
-                <div className="flex-1 rounded-2xl border border-[#E5EFEA] bg-white px-4 py-3 text-sm text-[#6B7A74]">
-                  Search tickers (e.g., NVDA, TSLA, 7203.T)
-                </div>
-                <div className="rounded-2xl bg-[#0B0F0E] text-white px-5 py-3 text-sm">
-                  Search
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-[#6B7A74]">
-                Later: connects to real market data + news.
               </div>
             </div>
           </div>
