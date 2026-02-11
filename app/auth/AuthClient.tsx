@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-function safeNext(next: string) {
+function safeNext(raw: string) {
   try {
-    const decoded = decodeURIComponent(next || "");
+    const decoded = decodeURIComponent(raw || "");
     if (!decoded.startsWith("/")) return "/feed";
     if (decoded === "/") return "/feed";
     return decoded;
@@ -14,8 +14,16 @@ function safeNext(next: string) {
   }
 }
 
+function getSiteUrl() {
+  // Force auth redirects onto ONE origin to avoid “login twice” / preview-domain loops.
+  const env = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (env) return env.replace(/\/$/, "");
+  return window.location.origin; // fallback for local/dev if you forgot env
+}
+
 export default function AuthClient({ next }: { next: string }) {
   const supabase = createClient();
+
   const nextSafe = useMemo(() => safeNext(next || "/feed"), [next]);
   const nextEncoded = useMemo(() => encodeURIComponent(nextSafe), [nextSafe]);
 
@@ -29,7 +37,8 @@ export default function AuthClient({ next }: { next: string }) {
     setMsg(null);
     setLoading("google");
 
-    const redirectTo = `${window.location.origin}/auth/callback?next=${nextEncoded}`;
+    const siteUrl = getSiteUrl();
+    const redirectTo = `${siteUrl}/auth/callback?next=${nextEncoded}`;
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -53,7 +62,8 @@ export default function AuthClient({ next }: { next: string }) {
       return;
     }
 
-    const emailRedirectTo = `${window.location.origin}/auth/callback?next=${nextEncoded}`;
+    const siteUrl = getSiteUrl();
+    const emailRedirectTo = `${siteUrl}/auth/callback?next=${nextEncoded}`;
 
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
