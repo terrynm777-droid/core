@@ -3,15 +3,29 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+function safeNext(raw: string) {
+  try {
+    const decoded = decodeURIComponent(raw || "");
+    if (!decoded.startsWith("/")) return "/feed";
+    if (decoded === "/") return "/feed";
+    return decoded;
+  } catch {
+    return "/feed";
+  }
+}
+
+function getSiteUrl() {
+  // Force auth redirects onto ONE origin to avoid “login twice” / preview-domain loops.
+  const env = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (env) return env.replace(/\/$/, "");
+  return window.location.origin; // fallback for local/dev if you forgot env
+}
+
 export default function AuthClient({ next }: { next: string }) {
   const supabase = createClient();
 
-  const safeNext = next && next.startsWith("/") && next !== "/" ? next : "/feed";
-  const nextEncoded = useMemo(() => encodeURIComponent(safeNext), [safeNext]);
-
-  // IMPORTANT: use a fixed site URL in prod (Vercel env), fallback to origin locally
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+  const nextSafe = useMemo(() => safeNext(next || "/feed"), [next]);
+  const nextEncoded = useMemo(() => encodeURIComponent(nextSafe), [nextSafe]);
 
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -23,11 +37,12 @@ export default function AuthClient({ next }: { next: string }) {
     setMsg(null);
     setLoading("google");
 
+    const siteUrl = getSiteUrl();
+    const redirectTo = `${siteUrl}/auth/callback?next=${nextEncoded}`;
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: `${siteUrl}/auth/callback?next=${nextEncoded}`,
-      },
+      options: { redirectTo },
     });
 
     setLoading(null);
@@ -47,11 +62,12 @@ export default function AuthClient({ next }: { next: string }) {
       return;
     }
 
+    const siteUrl = getSiteUrl();
+    const emailRedirectTo = `${siteUrl}/auth/callback?next=${nextEncoded}`;
+
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
-      options: {
-        emailRedirectTo: `${siteUrl}/auth/callback?next=${nextEncoded}`,
-      },
+      options: { emailRedirectTo },
     });
 
     setLoading(null);
