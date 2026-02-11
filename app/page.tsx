@@ -13,7 +13,9 @@ export default function Home({
   if (code) {
     const next = searchParams?.next ?? "/feed";
     redirect(
-      `/auth/callback?code=${encodeURIComponent(code)}&next=${encodeURIComponent(next)}`
+      `/auth/callback?code=${encodeURIComponent(code)}&next=${encodeURIComponent(
+        next
+      )}`
     );
   }
 
@@ -22,29 +24,27 @@ export default function Home({
       {/* Top bar */}
       <header className="mx-auto max-w-6xl px-6 pt-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {/* ICON: core-mark with blended bg */}
-          <div className="rounded-2xl bg-[#F7FAF8] p-2 border border-[#D7E4DD]">
+          {/* ICON bubble (bigger) */}
+          <div className="rounded-3xl bg-[#F7FAF8] p-2 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
             <Image
               src="/brand/core-mark.png"
               alt="CORE mark"
               width={56}
               height={56}
-              className="rounded-xl"
+              className="rounded-2xl"
               priority
             />
           </div>
 
-          {/* WORDMARK: core-logo */}
-          <div className="leading-tight flex flex-col">
+          {/* WORDMARK bubble (bigger, same bubble style) */}
+          <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
             <Image
               src="/brand/core-logo.png"
               alt="CORE"
-              width={140}
-              height={36}
+              width={170}
+              height={46}
               priority
-              className="opacity-95"
             />
-            <div className="text-sm text-[#4B5A55] -mt-0.5">Signal over noise</div>
           </div>
         </div>
 
@@ -109,10 +109,6 @@ export default function Home({
                 CORE Verified (future)
               </span>
             </div>
-
-            <p className="mt-4 text-xs text-[#6B7A74]">
-              Email login. No spam. Leave anytime.
-            </p>
           </div>
 
           {/* Right side */}
@@ -126,12 +122,7 @@ export default function Home({
 
             <div className="mt-6">
               <div className="text-sm font-semibold">Stock search</div>
-              <div className="mt-3">
-                <StockSearch />
-              </div>
-              <div className="mt-2 text-xs text-[#6B7A74]">
-                Pulls live quotes via your API key.
-              </div>
+              <StockSearch />
             </div>
 
             <div className="mt-6">
