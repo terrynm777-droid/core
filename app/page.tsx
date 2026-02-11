@@ -23,16 +23,18 @@ export default function Home({
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
       {/* Top bar */}
-      <header className="mx-auto max-w-6xl px-6 pt-6 flex items-start justify-between">
-        {/* LEFT: wordmark only (core-logo.png) */}
-        <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
-          <Image
-            src="/brand/core-logo.png"
-            alt="CORE"
-            width={190}
-            height={52}
-            priority
-          />
+      <header className="relative mx-auto max-w-6xl px-6 pt-6 flex items-start justify-end">
+        {/* ABSOLUTE: banner wordmark at super top-left */}
+        <div className="absolute left-0 top-0 -translate-x-3 -translate-y-3">
+          <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
+            <Image
+              src="/brand/core-logo.png"
+              alt="CORE"
+              width={190}
+              height={52}
+              priority
+            />
+          </div>
         </div>
 
         {/* RIGHT: icon + language */}
