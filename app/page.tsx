@@ -7,7 +7,6 @@ export default function Home({
 }: {
   searchParams?: { code?: string; next?: string };
 }) {
-  // If Supabase ever sends users back to "/" with ?code=..., forward it into our real callback.
   const code = searchParams?.code;
   if (code) {
     const next = searchParams?.next ?? "/feed";
@@ -21,17 +20,28 @@ export default function Home({
       {/* Top bar */}
       <header className="mx-auto max-w-6xl px-6 pt-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Image
-            src="/brand/core-mark.png"
-            alt="CORE mark"
-            width={40}
-            height={40}
-            className="rounded-xl"
-            priority
-          />
-          <div className="leading-tight">
-            <div className="text-lg font-semibold tracking-tight">CORE</div>
-            <div className="text-xs text-[#4B5A55]">Signal over noise</div>
+          {/* ICON: core-mark with blended background + subtle border */}
+          <div className="rounded-2xl bg-[#F7FAF8] p-1.5 border border-[#D7E4DD]">
+            <Image
+              src="/brand/core-mark.png"
+              alt="CORE mark"
+              width={34}
+              height={34}
+              className="rounded-xl"
+              priority
+            />
+          </div>
+
+          {/* WORDMARK: core-logo (text logo) */}
+          <div className="leading-tight flex flex-col">
+            <Image
+              src="/brand/core-logo.png"
+              alt="CORE"
+              width={92}
+              height={24}
+              priority
+            />
+            <div className="text-xs text-[#4B5A55] -mt-0.5">Signal over noise</div>
           </div>
         </div>
 
