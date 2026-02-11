@@ -3,6 +3,7 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import TrendingLive from "./components/TrendingLive";
 import StockSearch from "./components/StockSearch";
+import HeadlinesLive from "./components/HeadlinesLive";
 
 export default function Home({
   searchParams,
@@ -22,21 +23,19 @@ export default function Home({
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
       {/* Top bar */}
-      <header className="mx-auto max-w-6xl px-6 pt-6 flex items-center justify-between">
+      <header className="mx-auto max-w-6xl px-6 pt-6 flex items-start justify-between">
         {/* LEFT: wordmark only (core-logo.png) */}
-        <div className="flex items-center">
-          <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
-            <Image
-              src="/brand/core-logo.png"
-              alt="CORE"
-              width={190}
-              height={52}
-              priority
-            />
-          </div>
+        <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
+          <Image
+            src="/brand/core-logo.png"
+            alt="CORE"
+            width={190}
+            height={52}
+            priority
+          />
         </div>
 
-        {/* RIGHT: icon only (core-mark.png) + language */}
+        {/* RIGHT: icon + language */}
         <div className="flex items-center gap-3">
           <div className="rounded-3xl bg-[#F7FAF8] p-2 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
             <Image
@@ -49,26 +48,25 @@ export default function Home({
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
-            >
-              🇺🇸 EN
-            </button>
-            <button
-              type="button"
-              className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
-            >
-              🇯🇵 日本語
-            </button>
-          </div>
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
+          >
+            🇺🇸 EN
+          </button>
+          <button
+            type="button"
+            className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
+          >
+            🇯🇵 日本語
+          </button>
         </div>
       </header>
 
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-6 pt-14 pb-10">
         <div className="grid gap-10 md:grid-cols-2 items-center">
+          {/* Left copy */}
           <div>
             <h1 className="text-4xl md:text-5xl font-semibold tracking-tight">
               Markets, news, and discussion—{" "}
@@ -113,38 +111,29 @@ export default function Home({
             </div>
           </div>
 
-          {/* Right side */}
+          {/* Right panel */}
           <div className="rounded-3xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
+            {/* Trending */}
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Trending</div>
               <div className="text-xs text-[#6B7A74]">Live</div>
             </div>
-
             <TrendingLive />
 
+            {/* Stock search */}
             <div className="mt-6">
               <div className="text-sm font-semibold">Stock search</div>
               <StockSearch />
             </div>
 
+            {/* Headlines (LIVE) */}
             <div className="mt-6">
-              <div className="text-sm font-semibold">Today’s headlines</div>
-              <div className="mt-3 space-y-3">
-                {[
-                  "Rates, inflation, and what markets are pricing now",
-                  "Earnings week: what matters vs what’s noise",
-                  "AI trade: separating narrative from numbers",
-                ].map((h) => (
-                  <div
-                    key={h}
-                    className="rounded-2xl border border-[#E5EFEA] bg-white p-4"
-                  >
-                    <div className="text-sm">{h}</div>
-                    <div className="text-xs text-[#6B7A74] mt-1">
-                      Later → opens the chat thread (future)
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold">Today’s headlines</div>
+                <div className="text-xs text-[#6B7A74]">Live</div>
+              </div>
+              <div className="mt-3">
+                <HeadlinesLive />
               </div>
             </div>
           </div>
