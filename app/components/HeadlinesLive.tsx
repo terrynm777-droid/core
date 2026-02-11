@@ -2,98 +2,91 @@
 
 import { useEffect, useState } from "react";
 
-type Item = {
-  id: string;
+type Headline = {
+  id: number;
   headline: string;
   source: string;
-  summary: string;
   url: string;
   datetime: number;
 };
 
 export default function HeadlinesLive() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [items, setItems] = useState<Headline[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch("/api/headlines", { cache: "no-store" });
+      const json = await res.json();
+
+      if (!res.ok) {
+        setItems([]);
+        setError(json?.error ?? `Request failed: ${res.status}`);
+        return;
+      }
+
+      setItems(Array.isArray(json) ? json : []);
+    } catch (e: any) {
+      setItems([]);
+      setError(e?.message ?? "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let alive = true;
-
-    async function load() {
-      try {
-        setErr(null);
-        const r = await fetch("/api/headlines", { cache: "no-store" });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || "Failed to load headlines");
-        if (alive) setItems(j.items || []);
-      } catch (e: any) {
-        if (alive) setErr(e?.message || "Failed to load headlines");
-      }
-    }
-
     load();
-    const t = setInterval(load, 60_000); // refresh every 60s
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
   }, []);
 
-  if (err) {
+  if (loading) {
     return (
-      <div className="mt-3 rounded-2xl border border-[#E5EFEA] bg-white p-4 text-sm text-red-600">
-        {err}
+      <div className="rounded-2xl border border-[#E5EFEA] bg-white p-4 text-sm text-[#6B7A74]">
+        Loading headlines…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-[#F3D6D6] bg-white p-4 text-sm">
+        <div className="font-semibold text-[#B42318]">Headlines error</div>
+        <div className="mt-1 text-[#6B7A74]">{error}</div>
+        <div className="mt-2 text-xs text-[#6B7A74]">
+          Open <span className="font-mono">/api/headlines</span> on your deployed
+          site to see the raw error.
+        </div>
+      </div>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <div className="rounded-2xl border border-[#E5EFEA] bg-white p-4 text-sm text-[#6B7A74]">
+        No headlines returned.
       </div>
     );
   }
 
   return (
-    <div className="mt-3 space-y-3">
-      {items.map((x) => {
-        const isOpen = openId === x.id;
-        return (
-          <div
-            key={x.id}
-            className="rounded-2xl border border-[#E5EFEA] bg-white p-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="text-sm">{x.headline}</div>
-
-              <button
-                type="button"
-                className="text-xs text-[#6B7A74] hover:underline shrink-0"
-                onClick={() => setOpenId(isOpen ? null : x.id)}
-              >
-                {isOpen ? "Hide" : "Details"}
-              </button>
-            </div>
-
-            <div className="mt-1 text-xs text-[#6B7A74]">
-              {x.source} •{" "}
-              {x.datetime ? new Date(x.datetime * 1000).toLocaleString() : ""}
-            </div>
-
-            {isOpen && (
-              <div className="mt-3">
-                {x.summary && (
-                  <div className="text-xs text-[#3E4C47] leading-relaxed">
-                    {x.summary}
-                  </div>
-                )}
-
-                <a
-                  href={x.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-block text-xs text-[#0B0F0E] underline"
-                >
-                  Open source →
-                </a>
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <div className="space-y-3">
+      {items.map((h) => (
+        <a
+          key={h.id}
+          href={h.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-2xl border border-[#E5EFEA] bg-white p-4 hover:shadow-sm"
+        >
+          <div className="text-sm font-medium">{h.headline}</div>
+          <div className="mt-1 text-xs text-[#6B7A74]">{h.source}</div>
+        </a>
+      ))}
     </div>
   );
 }
