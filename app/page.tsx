@@ -23,8 +23,21 @@ export default function Home({
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
       {/* Top bar */}
       <header className="mx-auto max-w-6xl px-6 pt-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {/* ICON bubble (bigger) */}
+        {/* LEFT: wordmark only (core-logo.png) */}
+        <div className="flex items-center">
+          <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
+            <Image
+              src="/brand/core-logo.png"
+              alt="CORE"
+              width={190}
+              height={52}
+              priority
+            />
+          </div>
+        </div>
+
+        {/* RIGHT: icon only (core-mark.png) + language */}
+        <div className="flex items-center gap-3">
           <div className="rounded-3xl bg-[#F7FAF8] p-2 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
             <Image
               src="/brand/core-mark.png"
@@ -36,31 +49,20 @@ export default function Home({
             />
           </div>
 
-          {/* WORDMARK bubble (bigger, same bubble style) */}
-          <div className="rounded-3xl bg-[#F7FAF8] p-2.5 border border-[#D7E4DD] shadow-[0_1px_0_rgba(11,15,14,0.04)]">
-            <Image
-              src="/brand/core-logo.png"
-              alt="CORE"
-              width={170}
-              height={46}
-              priority
-            />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
+            >
+              🇺🇸 EN
+            </button>
+            <button
+              type="button"
+              className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
+            >
+              🇯🇵 日本語
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
-          >
-            🇺🇸 EN
-          </button>
-          <button
-            type="button"
-            className="px-3 py-2 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
-          >
-            🇯🇵 日本語
-          </button>
         </div>
       </header>
 
