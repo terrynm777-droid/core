@@ -29,7 +29,7 @@ type MeProfile = {
 };
 
 async function postAuthRedirect(nextSafe: string) {
-  // Option A: force profile setup if username missing
+  // Force profile setup if username missing
   try {
     const res = await fetch("/api/profile/me", { cache: "no-store" });
     const data = await res.json();
@@ -41,7 +41,7 @@ async function postAuthRedirect(nextSafe: string) {
       }
     }
   } catch {
-    // ignore; fall through to nextSafe
+    // ignore; fall through
   }
 
   window.location.href = nextSafe;
@@ -103,7 +103,10 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email: clean, password: pw });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: clean,
+      password: pw,
+    });
 
     setLoading(null);
     if (error) {
@@ -140,11 +143,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     const { data, error } = await supabase.auth.signUp({
       email: clean,
       password: pw,
-      options: {
-        // If confirmations are OFF, the session is created immediately.
-        // If confirmations are ON, they must confirm then login.
-        emailRedirectTo: redirectToCallback(),
-      },
+      options: { emailRedirectTo: redirectToCallback() },
     });
 
     setLoading(null);
@@ -165,6 +164,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
 
   async function sendMagicLink(e?: React.FormEvent) {
     if (e) e.preventDefault();
+
     setErr(null);
     setMsg(null);
     setLoading("magic");
@@ -197,6 +197,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           </p>
         </div>
 
+        {/* Tabs */}
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -211,6 +212,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           >
             Log in
           </button>
+
           <button
             type="button"
             onClick={() => {
@@ -226,6 +228,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           </button>
         </div>
 
+        {/* Google */}
         <button
           onClick={signInWithGoogle}
           disabled={loading !== null}
@@ -236,6 +239,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
 
         <div className="my-6 text-center text-sm text-[#6B7A74]">or</div>
 
+        {/* Password form */}
         {tab === "login" ? (
           <form onSubmit={onLogin} className="space-y-3">
             <input
