@@ -1,33 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import AvatarMenu from "@/app/components/AvatarMenu";
-
-type ApiProfile = {
-  username: string | null;
-  avatarUrl: string | null;
-  traderStyle: string | null;
-};
 
 type ApiPost = {
   id: string;
   content: string;
   createdAt: string;
-  profile: ApiProfile | null;
+  profile: {
+    id: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+    traderStyle: string | null;
+  } | null;
+};
+
+type MeProfile = {
+  id: string | null;
+  username: string | null;
+  avatarUrl: string | null;
 };
 
 export default function FeedClient() {
   const [posts, setPosts] = useState<ApiPost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [content, setContent] = useState("");
   const [posting, setPosting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  const [me, setMe] = useState<{ username: string | null; avatarUrl: string | null } | null>(null);
-
-  const canPost = useMemo(() => content.trim().length > 0 && !posting, [content, posting]);
+  const [me, setMe] = useState<MeProfile | null>(null);
+  const [content, setContent] = useState("");
 
   async function loadMe() {
     try {
@@ -35,35 +37,38 @@ export default function FeedClient() {
       const json = await res.json().catch(() => null);
       if (!res.ok) return;
       setMe({
+        id: json?.profile?.id ?? null,
         username: json?.profile?.username ?? null,
-        avatarUrl: json?.profile?.avatar_url ?? null,
+        avatarUrl: json?.profile?.avatarUrl ?? null,
       });
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
-  async function loadPosts(isRefresh = false) {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-
+  async function loadPosts() {
+    setErr(null);
+    setLoading(true);
     try {
       const res = await fetch("/api/posts", { cache: "no-store" });
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Failed to load");
+      if (!res.ok) throw new Error(json?.error || "Failed to load feed");
       setPosts(Array.isArray(json?.posts) ? json.posts : []);
-    } catch {
-      // keep whatever was there
+    } catch (e: any) {
+      setErr(e?.message || "Failed to load feed");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }
 
-  async function submitPost() {
+  useEffect(() => {
+    loadMe();
+    loadPosts();
+  }, []);
+
+  async function createPost() {
     const text = content.trim();
     if (!text) return;
 
+    setErr(null);
     setPosting(true);
     try {
       const res = await fetch("/api/posts", {
@@ -74,53 +79,29 @@ export default function FeedClient() {
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to post");
 
-      if (json?.post) {
-        setPosts((prev) => [json.post as ApiPost, ...prev]);
-      } else {
-        await loadPosts(true);
-      }
+      const newPost = json?.post as ApiPost | undefined;
+      if (newPost?.id) setPosts((prev) => [newPost, ...prev]);
+      else await loadPosts();
 
       setContent("");
-    } catch {
-      // ignore for now (you can add toast later)
+    } catch (e: any) {
+      setErr(e?.message || "Failed to post");
     } finally {
       setPosting(false);
     }
   }
 
-  useEffect(() => {
-    (async () => {
-      await Promise.all([loadMe(), loadPosts(false)]);
-    })();
-  }, []);
-
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
-      {/* Top-right fixed brand */}
-      <Link
-        href="/feed"
-        className="fixed right-6 top-6 z-50 rounded-full border border-[#D7E4DD] bg-white px-3 py-2 shadow-sm hover:shadow"
-        aria-label="Core"
-        title="Core"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/core-mark.png"
-          alt="Core"
-          className="h-6 w-6 object-contain"
-        />
-      </Link>
-
-      <div className="mx-auto max-w-3xl space-y-6">
-        {/* Header */}
+      <div className="mx-auto max-w-2xl space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-semibold">Feed</h1>
 
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={submitPost}
-              disabled={!canPost}
+              onClick={createPost}
+              disabled={posting || !content.trim()}
               className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {posting ? "Posting…" : "Post"}
@@ -128,32 +109,43 @@ export default function FeedClient() {
 
             <button
               type="button"
-              onClick={() => loadPosts(true)}
-              disabled={refreshing}
-              className="rounded-2xl border border-[#D7E4DD] bg-white px-5 py-2 text-sm font-medium hover:shadow-sm disabled:opacity-50"
+              onClick={loadPosts}
+              className="rounded-2xl border border-[#D7E4DD] bg-white px-5 py-2 text-sm font-medium hover:shadow-sm"
             >
-              {refreshing ? "Refreshing…" : "Refresh"}
+              Refresh
             </button>
 
-            <AvatarMenu avatarUrl={me?.avatarUrl ?? null} username={me?.username ?? null} />
+            <AvatarMenu me={me} />
           </div>
         </div>
 
-        {/* Composer */}
-        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write a post…"
-            className="min-h-[120px] w-full resize-none rounded-2xl border border-[#D7E4DD] bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#22C55E]/20"
+            className="min-h-[96px] w-full resize-none rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm outline-none"
           />
           <div className="mt-3 flex items-center justify-between text-xs text-[#6B7A74]">
-            <div>{content.trim().length}/20000</div>
-            <div>Keep it short. No spam.</div>
+            <span>{content.length}/20000</span>
+            {me?.username ? (
+              <Link href={`/u/${encodeURIComponent(me.username)}`} className="hover:underline">
+                Posting as @{me.username}
+              </Link>
+            ) : (
+              <Link href="/settings/profile" className="hover:underline">
+                Set up profile
+              </Link>
+            )}
           </div>
         </div>
 
-        {/* Feed list */}
+        {err ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {err}
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="text-sm text-[#6B7A74]">Loading…</div>
         ) : (
@@ -162,6 +154,10 @@ export default function FeedClient() {
               const username = p.profile?.username ?? "unknown";
               const style = p.profile?.traderStyle ?? "—";
               const when = new Date(p.createdAt).toLocaleString();
+              const profileHref =
+                username !== "unknown"
+                  ? `/u/${encodeURIComponent(username)}`
+                  : null;
 
               return (
                 <div
@@ -169,17 +165,35 @@ export default function FeedClient() {
                   className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full border border-[#D7E4DD] bg-[#F7FAF8]" />
-                      <div>
-                        <div className="font-semibold">@{username}</div>
+                    <div>
+                      {profileHref ? (
+                        <Link href={profileHref} className="font-semibold hover:underline">
+                          @{username}
+                        </Link>
+                      ) : (
+                        <div className="font-semibold text-[#6B7A74]">@unknown</div>
+                      )}
+
+                      {/* treat “portfolio” click the same: style line is also a link */}
+                      {profileHref ? (
+                        <Link
+                          href={profileHref}
+                          className="block text-xs text-[#6B7A74] hover:underline"
+                          title="Open profile"
+                        >
+                          {style}
+                        </Link>
+                      ) : (
                         <div className="text-xs text-[#6B7A74]">{style}</div>
-                      </div>
+                      )}
                     </div>
+
                     <div className="text-xs text-[#6B7A74]">{when}</div>
                   </div>
 
-                  <div className="mt-3 whitespace-pre-wrap text-sm">{p.content}</div>
+                  <div className="mt-3 whitespace-pre-wrap text-sm">
+                    {p.content}
+                  </div>
                 </div>
               );
             })}

@@ -1,184 +1,189 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-
-type TraderStyle = "" | "day" | "short" | "mid" | "long";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type MeProfile = {
   id: string;
   username: string | null;
-  avatarUrl: string | null;
   bio: string | null;
-  traderStyle: TraderStyle | null;
-  portfolio: any[] | null;
-  portfolioPublic: boolean | null;
+  trader_style: string | null;
+  avatar_url: string | null;
 };
 
 export default function ProfileEditor() {
-  const router = useRouter();
+  const supabase = createClient();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
+  const [traderStyle, setTraderStyle] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
-  const [traderStyle, setTraderStyle] = useState<TraderStyle>("");
-  const [portfolioPublic, setPortfolioPublic] = useState(true);
+
+  const [file, setFile] = useState<File | null>(null);
 
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      setOk(null);
-
+  async function load() {
+    setErr(null);
+    setOk(null);
+    setLoading(true);
+    try {
       const res = await fetch("/api/profile/me", { cache: "no-store" });
       const json = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        setErr(json?.error || "Failed to load profile");
-        setLoading(false);
-        return;
-      }
+      if (!res.ok) throw new Error(json?.error || "Failed to load");
 
       const p: MeProfile | null = json?.profile ?? null;
       setUsername(p?.username ?? "");
       setBio(p?.bio ?? "");
-      setAvatarUrl(p?.avatarUrl ?? "");
-      setTraderStyle((p?.traderStyle as TraderStyle) ?? "");
-      setPortfolioPublic(p?.portfolioPublic ?? true);
-
+      setTraderStyle(p?.trader_style ?? "");
+      setAvatarUrl(p?.avatar_url ?? "");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to load");
+    } finally {
       setLoading(false);
-    })();
+    }
+  }
+
+  useEffect(() => {
+    load();
   }, []);
 
-  const canSave = useMemo(() => {
-    const u = username.trim();
-    if (!u) return false;
-    if (u.length < 3) return false;
-    if (u.length > 20) return false;
-    if (!/^[a-zA-Z0-9_]+$/.test(u)) return false;
-    return true;
-  }, [username]);
+  async function uploadAvatarIfNeeded(): Promise<string | null> {
+    if (!file) return avatarUrl.trim() ? avatarUrl.trim() : null;
 
-  async function onSave() {
-    setSaving(true);
+    // Upload to Supabase Storage bucket `avatars`
+    // You must create the bucket in Supabase dashboard (public).
+    const ext = file.name.split(".").pop() || "png";
+    const filePath = `avatars/${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type || "image/png",
+      });
+
+    if (upErr) throw new Error(upErr.message);
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    return data.publicUrl || null;
+  }
+
+  async function save() {
     setErr(null);
     setOk(null);
+    setSaving(true);
+    try {
+      const finalAvatar = await uploadAvatarIfNeeded();
 
-    const payload = {
-      username: username.trim(),
-      bio,
-      avatarUrl,
-      traderStyle: traderStyle || null,
-      portfolioPublic,
-      // portfolio: null, // leave for later; we’ll add editor UI after step 6
-    };
+      // IMPORTANT: Partial save allowed.
+      // Only send what the user typed. No required fields.
+      const payload = {
+        username: username.trim() || null,
+        bio: bio.trim() || null,
+        trader_style: traderStyle.trim() || null,
+        avatar_url: finalAvatar,
+      };
 
-    const res = await fetch("/api/profile/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      const res = await fetch("/api/profile/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    const json = await res.json().catch(() => null);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Failed to save");
 
-    if (!res.ok) {
-      setErr(json?.error || "Save failed");
+      setOk("Saved.");
+      setFile(null);
+    } catch (e: any) {
+      setErr(e?.message || "Save failed");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setOk("Saved.");
-    setSaving(false);
-
-    router.refresh();
   }
 
-  if (loading) {
-    return <div className="text-sm text-[#6B7A74]">Loading…</div>;
-  }
+  if (loading) return <div className="text-sm text-[#6B7A74]">Loading…</div>;
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="space-y-6">
+      <div className="space-y-2">
         <div className="text-sm font-semibold">Username</div>
-        <div className="text-xs text-[#6B7A74]">
-          3–20 chars. Letters, numbers, underscore only.
-        </div>
         <input
-          className="mt-2 w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="e.g. terry_trades"
+          placeholder="terry_trades1"
+        />
+        <div className="text-xs text-[#6B7A74]">
+          You can leave blank and set later.
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-sm font-semibold">Trader style</div>
+        <input
+          className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          value={traderStyle}
+          onChange={(e) => setTraderStyle(e.target.value)}
+          placeholder="Momentum / Macro / Long-term"
         />
       </div>
 
-      <div>
+      <div className="space-y-2">
         <div className="text-sm font-semibold">Bio</div>
         <textarea
-          className="mt-2 w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm min-h-[96px]"
+          className="w-full min-h-[96px] rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           value={bio}
           onChange={(e) => setBio(e.target.value)}
-          placeholder="What do you focus on? What do you avoid?"
+          placeholder="Short bio (optional)"
         />
       </div>
 
-      <div>
-        <div className="text-sm font-semibold">Avatar URL</div>
-        <input
-          className="mt-2 w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
-          value={avatarUrl}
-          onChange={(e) => setAvatarUrl(e.target.value)}
-          placeholder="https://..."
-        />
-      </div>
+      <div className="space-y-3 rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
+        <div className="text-sm font-semibold">Profile picture</div>
 
-      <div>
-        <div className="text-sm font-semibold">Trader style</div>
-        <select
-          className="mt-2 w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
-          value={traderStyle}
-          onChange={(e) => setTraderStyle(e.target.value as TraderStyle)}
-        >
-          <option value="">—</option>
-          <option value="day">Day trader</option>
-          <option value="short">Short-term</option>
-          <option value="mid">Mid-term</option>
-          <option value="long">Long-term</option>
-        </select>
-      </div>
-
-      <div className="flex items-center justify-between rounded-xl border border-[#D7E4DD] bg-white px-3 py-3">
-        <div>
-          <div className="text-sm font-semibold">Portfolio visibility</div>
-          <div className="text-xs text-[#6B7A74]">
-            Public = others can see your portfolio on your profile page.
-          </div>
+        <div className="space-y-2">
+          <div className="text-xs text-[#6B7A74]">Option 1: paste image URL</div>
+          <input
+            className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+            value={avatarUrl}
+            onChange={(e) => setAvatarUrl(e.target.value)}
+            placeholder="https://…"
+          />
         </div>
 
-        <button
-          type="button"
-          onClick={() => setPortfolioPublic((v) => !v)}
-          className={`rounded-xl px-3 py-2 text-sm font-medium border ${
-            portfolioPublic
-              ? "border-[#22C55E] bg-[#E9F9EF] text-[#166534]"
-              : "border-[#D7E4DD] bg-white text-[#0B0F0E]"
-          }`}
-        >
-          {portfolioPublic ? "Public" : "Private"}
-        </button>
+        <div className="space-y-2">
+          <div className="text-xs text-[#6B7A74]">
+            Option 2: upload from computer
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-sm"
+          />
+          {file ? (
+            <div className="text-xs text-[#6B7A74]">
+              Selected: {file.name}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {err ? <div className="text-sm text-red-600">{err}</div> : null}
       {ok ? <div className="text-sm text-green-600">{ok}</div> : null}
 
       <button
-        onClick={onSave}
-        disabled={!canSave || saving}
+        onClick={save}
+        disabled={saving}
         className="w-full rounded-2xl bg-[#22C55E] px-4 py-3 text-white font-medium disabled:opacity-50"
       >
         {saving ? "Saving…" : "Save"}
