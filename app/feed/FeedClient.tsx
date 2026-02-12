@@ -1,13 +1,13 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-type Post = {
+type ApiPost = {
   id: string;
   content: string;
   createdAt: string;
-  authorId: string | null;
   profile: {
     username: string | null;
     avatarUrl: string | null;
@@ -16,117 +16,183 @@ type Post = {
   } | null;
 };
 
+type MeProfile = {
+  username: string | null;
+};
+
 export default function FeedClient() {
-  const [posts, setPosts] = useState<Post[]>([]);
+  const router = useRouter();
+
+  const [posts, setPosts] = useState<ApiPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function load() {
+  const [content, setContent] = useState("");
+
+  const [me, setMe] = useState<MeProfile>({ username: null });
+
+  const profileHref = useMemo(() => {
+    const u = (me.username || "").trim();
+    if (!u) return "/settings/profile";
+    return `/u/${u}`;
+  }, [me.username]);
+
+  async function loadMe() {
+    try {
+      const res = await fetch("/api/profile/me", { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      if (res.ok) {
+        setMe({ username: json?.profile?.username ?? null });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function loadPosts() {
     setErr(null);
     setLoading(true);
     try {
       const res = await fetch("/api/posts", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to load");
-      setPosts(data.posts || []);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Failed to load feed");
+      setPosts(Array.isArray(json?.posts) ? json.posts : []);
     } catch (e: any) {
-      setErr(e?.message || "Failed to load");
+      setErr(e?.message || "Failed to load feed");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    loadMe();
+    loadPosts();
   }, []);
 
+  async function onPost() {
+    const v = content.trim();
+    if (!v) return;
+
+    setPosting(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: v }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Post failed");
+      setContent("");
+      await loadPosts();
+      router.refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Post failed");
+    } finally {
+      setPosting(false);
+    }
+  }
+
   return (
-    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-semibold">Feed</h1>
+    <div className="mx-auto max-w-3xl px-6 py-10">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-3xl font-semibold">Feed</h1>
 
-          <div className="flex gap-3">
-            <Link
-              href="/create"
-              className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95"
-            >
-              Post
-            </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onPost}
+            disabled={posting || !content.trim()}
+            className="rounded-2xl bg-[#22C55E] px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {posting ? "Posting…" : "Post"}
+          </button>
 
-            <button
-              onClick={load}
-              className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl border border-[#D7E4DD] bg-white font-medium hover:shadow-sm"
-            >
-              Refresh
-            </button>
+          <button
+            onClick={loadPosts}
+            className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2.5 text-sm font-medium hover:shadow-sm"
+          >
+            Refresh
+          </button>
 
-            <Link
-              href="/auth/signout"
-              className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl border border-[#D7E4DD] bg-white font-medium hover:shadow-sm"
-            >
-              Sign out
-            </Link>
-          </div>
-        </div>
+          <Link
+            href={profileHref}
+            className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2.5 text-sm font-medium hover:shadow-sm"
+          >
+            Profile
+          </Link>
 
-        <div className="mt-6 space-y-4">
-          {loading ? (
-            <div className="text-sm text-[#4B5A55]">Loading…</div>
-          ) : err ? (
-            <div className="rounded-2xl border border-red-200 bg-white p-4 text-sm text-red-600">
-              {err}
-            </div>
-          ) : posts.length === 0 ? (
-            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 text-sm text-[#4B5A55]">
-              No posts yet.
-            </div>
-          ) : (
-            posts.map((p) => {
-              const u = p.profile?.username ?? "unknown";
-              return (
-                <div
-                  key={p.id}
-                  className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm"
-                >
-                  <div className="flex items-center justify-between">
-                    <Link
-                      href={`/u/${encodeURIComponent(u)}`}
-                      className="flex items-center gap-3 hover:opacity-90"
-                    >
-                      <div className="h-9 w-9 rounded-full overflow-hidden border border-[#D7E4DD] bg-[#F3F7F5]">
-                        {p.profile?.avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={p.profile.avatarUrl}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : null}
-                      </div>
+          <Link
+            href="/settings/profile"
+            className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2.5 text-sm font-medium hover:shadow-sm"
+          >
+            Edit profile
+          </Link>
 
-                      <div className="leading-tight">
-                        <div className="text-sm font-semibold">@{u}</div>
-                        <div className="text-xs text-[#6B7A74]">
-                          {p.profile?.traderStyle ?? "—"}
-                        </div>
-                      </div>
-                    </Link>
+          <Link
+            href="/settings/portfolio"
+            className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2.5 text-sm font-medium hover:shadow-sm"
+          >
+            Edit portfolio
+          </Link>
 
-                    <div className="text-xs text-[#6B7A74]">
-                      {new Date(p.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-base font-medium whitespace-pre-wrap">
-                    {p.content}
-                  </div>
-                </div>
-              );
-            })
-          )}
+          <Link
+            href="/auth/signout"
+            className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2.5 text-sm font-medium hover:shadow-sm"
+          >
+            Sign out
+          </Link>
         </div>
       </div>
-    </main>
+
+      {/* Composer */}
+      <div className="mt-6 rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
+        <textarea
+          className="w-full min-h-[96px] rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          placeholder="Write a post…"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+      </div>
+
+      {err ? (
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {err}
+        </div>
+      ) : null}
+
+      {/* Feed */}
+      <div className="mt-6 space-y-4">
+        {loading ? (
+          <div className="text-sm text-[#6B7A74]">Loading…</div>
+        ) : posts.length === 0 ? (
+          <div className="text-sm text-[#6B7A74]">No posts yet.</div>
+        ) : (
+          posts.map((p) => {
+            const username = p.profile?.username || "unknown";
+            const style = p.profile?.traderStyle || "—";
+            const when = new Date(p.createdAt).toLocaleString();
+
+            return (
+              <div
+                key={p.id}
+                className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-semibold">@{username}</div>
+                    <div className="text-xs text-[#6B7A74]">{style}</div>
+                  </div>
+                  <div className="text-xs text-[#6B7A74]">{when}</div>
+                </div>
+
+                <div className="mt-3 whitespace-pre-wrap text-sm">{p.content}</div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
   );
 }

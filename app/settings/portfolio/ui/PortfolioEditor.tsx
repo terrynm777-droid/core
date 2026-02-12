@@ -2,11 +2,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+type SymbolResult = {
+  symbol: string;
+  name: string;
+  type: string;
+};
+
 type Holding = {
   symbol: string;
-  weight: number;
-  notes?: string | null;
+  name?: string;
+  amount: number;
+  currency: string;
 };
+
+const CURRENCIES = ["USD","JPY","AUD","HKD","EUR","GBP","CNY","CAD","CHF","SGD"];
+
+function clamp(n: number) {
+  if (!isFinite(n)) return 0;
+  if (n < 0) return 0;
+  return n;
+}
 
 export default function PortfolioEditor() {
   const [loading, setLoading] = useState(true);
@@ -14,42 +29,43 @@ export default function PortfolioEditor() {
 
   const [name, setName] = useState("My Portfolio");
   const [isPublic, setIsPublic] = useState(false);
-  const [holdings, setHoldings] = useState<Holding[]>([
-    { symbol: "AAPL", weight: 50 },
-    { symbol: "MSFT", weight: 50 },
-  ]);
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+
+  // add flow
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<SymbolResult[]>([]);
+  const [pick, setPick] = useState<SymbolResult | null>(null);
+  const [amount, setAmount] = useState<string>("");
+  const [currency, setCurrency] = useState("USD");
 
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  const total = useMemo(
-    () => holdings.reduce((acc, h) => acc + (Number(h.weight) || 0), 0),
-    [holdings]
-  );
+  // live value
+  const [live, setLive] = useState<any>(null);
+  const [snapPoints, setSnapPoints] = useState<{ day: string; total_usd: number }[]>([]);
 
-  const chartStyle = useMemo(() => {
-    let acc = 0;
-    const parts = holdings
-      .filter((h) => h.symbol.trim() && Number(h.weight) > 0)
-      .map((h) => {
-        const start = acc;
-        acc += Number(h.weight);
-        const end = acc;
-        return { start, end };
-      });
+  const totalAmount = useMemo(() => holdings.reduce((a, h) => a + (Number(h.amount) || 0), 0), [holdings]);
 
-    if (parts.length === 0) {
+  const pieStyle = useMemo(() => {
+    if (totalAmount <= 0 || holdings.length === 0) {
       return { backgroundImage: "conic-gradient(#D7E4DD 0 100%)" } as any;
     }
 
+    let acc = 0;
     const palette = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
-    const segs = parts.map((p, i) => {
-      const c = palette[i % palette.length];
-      return `${c} ${p.start}% ${p.end}%`;
+
+    const segs: string[] = [];
+    holdings.forEach((h, i) => {
+      const w = (h.amount / totalAmount) * 100;
+      const start = acc;
+      const end = acc + w;
+      acc = end;
+      segs.push(`${palette[i % palette.length]} ${start}% ${end}%`);
     });
 
     return { backgroundImage: `conic-gradient(${segs.join(",")})` } as any;
-  }, [holdings]);
+  }, [holdings, totalAmount]);
 
   async function load() {
     setErr(null);
@@ -66,11 +82,14 @@ export default function PortfolioEditor() {
       const rows = Array.isArray(json?.holdings) ? json.holdings : [];
       setHoldings(
         rows.map((r: any) => ({
-          symbol: String(r.symbol ?? ""),
-          weight: Number(r.weight ?? 0),
-          notes: r.notes ?? null,
-        }))
+          symbol: String(r.symbol ?? "").toUpperCase(),
+          amount: Number(r.amount ?? 0),
+          currency: String(r.currency ?? "USD").toUpperCase(),
+        })).filter((h: Holding) => h.symbol && h.amount > 0)
       );
+
+      await refreshLive();
+      await refreshSnapshots();
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
     } finally {
@@ -78,19 +97,71 @@ export default function PortfolioEditor() {
     }
   }
 
+  async function refreshLive() {
+    const res = await fetch("/api/portfolio/value", { cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (res.ok) setLive(json);
+  }
+
+  async function refreshSnapshots() {
+    // Upsert today's snapshot (temporary “no cron” solution)
+    await fetch("/api/portfolio/snapshot", { method: "POST" });
+
+    const res = await fetch("/api/portfolio/snapshot", { cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (res.ok) setSnapPoints((json?.points ?? []).map((p: any) => ({ day: p.day, total_usd: Number(p.total_usd ?? 0) })));
+  }
+
   useEffect(() => {
     load();
   }, []);
 
-  function setRow(i: number, patch: Partial<Holding>) {
-    setHoldings((prev) => prev.map((h, idx) => (idx === i ? { ...h, ...patch } : h)));
+  async function searchSymbols(text: string) {
+    const t = text.trim();
+    setQ(text);
+    setPick(null);
+    if (t.length < 1) {
+      setResults([]);
+      return;
+    }
+    const res = await fetch(`/api/symbols?q=${encodeURIComponent(t)}`, { cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (res.ok) setResults(Array.isArray(json?.results) ? json.results : []);
   }
 
-  function addRow() {
-    setHoldings((prev) => [...prev, { symbol: "", weight: 0 }]);
+  function addHolding() {
+    setErr(null);
+    setOk(null);
+
+    if (!pick?.symbol) {
+      setErr("Pick a stock/crypto from the search results.");
+      return;
+    }
+    const amt = clamp(Number(amount));
+    if (amt <= 0) {
+      setErr("Enter a valid amount.");
+      return;
+    }
+
+    const sym = pick.symbol.toUpperCase();
+    setHoldings((prev) => {
+      // merge if same symbol+currency already exists
+      const idx = prev.findIndex((h) => h.symbol === sym && h.currency === currency);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], amount: copy[idx].amount + amt };
+        return copy;
+      }
+      return [...prev, { symbol: sym, name: pick.name, amount: amt, currency }];
+    });
+
+    setPick(null);
+    setResults([]);
+    setQ("");
+    setAmount("");
   }
 
-  function removeRow(i: number) {
+  function removeHolding(i: number) {
     setHoldings((prev) => prev.filter((_, idx) => idx !== i));
   }
 
@@ -100,6 +171,7 @@ export default function PortfolioEditor() {
     setSaving(true);
 
     try {
+      // save meta
       const metaRes = await fetch("/api/portfolio", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -108,6 +180,7 @@ export default function PortfolioEditor() {
       const metaJson = await metaRes.json().catch(() => null);
       if (!metaRes.ok) throw new Error(metaJson?.error || "Failed to save settings");
 
+      // save holdings replace-all
       const putRes = await fetch("/api/portfolio", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -117,6 +190,8 @@ export default function PortfolioEditor() {
       if (!putRes.ok) throw new Error(putJson?.error || "Failed to save holdings");
 
       setOk("Saved.");
+      await refreshLive();
+      await refreshSnapshots();
     } catch (e: any) {
       setErr(e?.message || "Save failed");
     } finally {
@@ -128,41 +203,69 @@ export default function PortfolioEditor() {
 
   return (
     <div className="space-y-6">
+      {/* Pie + live change */}
       <div className="flex items-center gap-4">
-        <div
-          className="h-20 w-20 rounded-full border border-[#D7E4DD]"
-          style={chartStyle}
-          title="Portfolio weights"
-        />
+        <div className="h-24 w-24 rounded-full border border-[#D7E4DD]" style={pieStyle} />
         <div className="flex-1">
-          <div className="text-sm font-semibold">Total weight</div>
-          <div className="text-sm text-[#6B7A74]">{total.toFixed(2)}%</div>
-          <div className="text-xs text-[#6B7A74]">
-            Keep ≤ 100%. (You can leave cash unallocated.)
+          <div className="text-sm font-semibold">Portfolio</div>
+          <div className="text-sm text-[#6B7A74]">
+            Total allocation: {totalAmount.toFixed(2)}
           </div>
+
+          {live ? (
+            <div className="mt-1 text-sm">
+              Today:{" "}
+              <span className={Number(live.dayChangePct) >= 0 ? "text-green-600" : "text-red-600"}>
+                {Number(live.dayChangePct).toFixed(2)}% ({Number(live.dayChangeAmount).toFixed(2)})
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
 
+      {/* Daily performance bars (simple) */}
+      <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4">
+        <div className="text-sm font-semibold">Last 30 days (snapshot)</div>
+        <div className="mt-3 flex items-end gap-1 h-24">
+          {snapPoints.length === 0 ? (
+            <div className="text-xs text-[#6B7A74]">No history yet.</div>
+          ) : (
+            (() => {
+              const max = Math.max(...snapPoints.map(p => p.total_usd), 1);
+              return snapPoints.map((p, i) => (
+                <div
+                  key={p.day + i}
+                  title={`${p.day}: ${p.total_usd.toFixed(2)}`}
+                  className="flex-1 rounded-sm bg-[#D7E4DD]"
+                  style={{ height: `${(p.total_usd / max) * 100}%` }}
+                />
+              ));
+            })()
+          )}
+        </div>
+        <div className="mt-2 text-xs text-[#6B7A74]">
+          (This will become accurate once you add FX conversion + shares. Right now it tracks your allocation total.)
+        </div>
+      </div>
+
+      {/* Meta */}
       <div className="space-y-2">
         <div className="text-sm font-semibold">Portfolio name</div>
         <input
           className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="My Portfolio"
         />
       </div>
 
       <div className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-4 py-3">
         <div>
           <div className="text-sm font-semibold">Public portfolio</div>
-          <div className="text-xs text-[#6B7A74]">
-            If off, only you can view your holdings.
-          </div>
+          <div className="text-xs text-[#6B7A74]">If off, only you can view it.</div>
         </div>
         <button
           type="button"
-          onClick={() => setIsPublic((v) => !v)}
+          onClick={() => setIsPublic(v => !v)}
           className={`rounded-2xl px-4 py-2 text-sm font-medium ${
             isPublic ? "bg-[#22C55E] text-white" : "border border-[#D7E4DD] bg-white"
           }`}
@@ -171,54 +274,82 @@ export default function PortfolioEditor() {
         </button>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Holdings</div>
+      {/* Create portfolio flow: search -> pick -> amount + currency -> add */}
+      <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 space-y-3">
+        <div className="text-sm font-semibold">Add holding</div>
+
+        <input
+          value={q}
+          onChange={(e) => searchSymbols(e.target.value)}
+          placeholder="Search stock / crypto (e.g., NVDA, BTC)"
+          className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+        />
+
+        {results.length > 0 ? (
+          <div className="max-h-48 overflow-auto rounded-xl border border-[#D7E4DD]">
+            {results.map((r) => (
+              <button
+                key={`${r.symbol}-${r.type}`}
+                type="button"
+                onClick={() => { setPick(r); setResults([]); setQ(`${r.symbol} — ${r.name}`); }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-[#F7FAF8]"
+              >
+                <span className="font-mono">{r.symbol}</span>{" "}
+                <span className="text-[#6B7A74]">— {r.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-12 gap-2">
+          <input
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Amount"
+            inputMode="decimal"
+            className="col-span-7 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          />
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="col-span-3 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          >
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
           <button
             type="button"
-            onClick={addRow}
-            className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+            onClick={addHolding}
+            className="col-span-2 rounded-xl bg-[#22C55E] text-white text-sm font-medium hover:brightness-95"
           >
             Add
           </button>
         </div>
+      </div>
 
-        <div className="space-y-2">
-          {holdings.map((h, i) => (
-            <div
-              key={`${h.symbol}-${i}`}
-              className="grid grid-cols-12 gap-2 rounded-2xl border border-[#D7E4DD] bg-white p-3"
-            >
-              <input
-                className="col-span-4 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
-                value={h.symbol}
-                onChange={(e) => setRow(i, { symbol: e.target.value })}
-                placeholder="TSLA"
-              />
-              <input
-                className="col-span-3 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
-                value={String(h.weight)}
-                onChange={(e) => setRow(i, { weight: Number(e.target.value) })}
-                placeholder="25"
-                inputMode="decimal"
-              />
-              <input
-                className="col-span-4 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
-                value={h.notes ?? ""}
-                onChange={(e) => setRow(i, { notes: e.target.value })}
-                placeholder="Optional note"
-              />
+      {/* Holdings list */}
+      <div className="space-y-2">
+        <div className="text-sm font-semibold">Holdings</div>
+        {holdings.length === 0 ? (
+          <div className="text-sm text-[#6B7A74]">No holdings yet.</div>
+        ) : (
+          holdings.map((h, i) => (
+            <div key={`${h.symbol}-${h.currency}-${i}`} className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3">
+              <div>
+                <div className="text-sm font-medium">
+                  <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
+                </div>
+                <div className="text-xs text-[#6B7A74]">{h.amount.toFixed(2)}</div>
+              </div>
               <button
                 type="button"
-                onClick={() => removeRow(i)}
-                className="col-span-1 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
-                title="Remove"
+                onClick={() => removeHolding(i)}
+                className="rounded-xl border border-[#D7E4DD] bg-white px-3 py-1 text-sm hover:shadow-sm"
               >
-                ×
+                Remove
               </button>
             </div>
-          ))}
-        </div>
+          ))
+        )}
       </div>
 
       {err ? <div className="text-sm text-red-600">{err}</div> : null}
