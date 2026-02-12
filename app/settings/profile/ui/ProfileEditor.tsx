@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type MeProfile = {
@@ -11,8 +11,20 @@ type MeProfile = {
   avatar_url: string | null;
 };
 
+function clean(s: string) {
+  const t = (s ?? "").trim();
+  return t.length ? t : null;
+}
+
+function safeExtFromFileName(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase() || "png";
+  // basic allowlist
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return ext;
+  return "png";
+}
+
 export default function ProfileEditor() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,10 +43,11 @@ export default function ProfileEditor() {
     setErr(null);
     setOk(null);
     setLoading(true);
+
     try {
       const res = await fetch("/api/profile/me", { cache: "no-store" });
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Failed to load");
+      if (!res.ok) throw new Error(json?.error || "Failed to load profile");
 
       const p: MeProfile | null = json?.profile ?? null;
       setUsername(p?.username ?? "");
@@ -50,46 +63,56 @@ export default function ProfileEditor() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function uploadAvatarIfNeeded(): Promise<string | null> {
-    if (!file) return avatarUrl.trim() ? avatarUrl.trim() : null;
-
-    // Upload to Supabase Storage bucket `avatars`
-    // You must create the bucket in Supabase dashboard (public).
-    const ext = file.name.split(".").pop() || "png";
-    const filePath = `avatars/${Date.now()}-${Math.random()
+  async function uploadAvatar(fileToUpload: File): Promise<string> {
+    // Bucket must exist: "avatars"
+    // Policy must allow authenticated INSERT/UPSERT for their own path
+    const ext = safeExtFromFileName(fileToUpload.name);
+    const userPart = "me"; // keep path simple; policy can be based on auth.uid() in object name if you prefer
+    const filePath = `${userPart}/${Date.now()}-${Math.random()
       .toString(16)
       .slice(2)}.${ext}`;
 
     const { error: upErr } = await supabase.storage
       .from("avatars")
-      .upload(filePath, file, {
+      .upload(filePath, fileToUpload, {
         cacheControl: "3600",
         upsert: true,
-        contentType: file.type || "image/png",
+        contentType: fileToUpload.type || "image/png",
       });
 
     if (upErr) throw new Error(upErr.message);
 
     const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    return data.publicUrl || null;
+    const url = data?.publicUrl;
+    if (!url) throw new Error("Avatar upload succeeded but no public URL returned.");
+    return url;
+  }
+
+  async function resolveAvatarUrl(): Promise<string | null> {
+    // If user picked a file, that wins.
+    if (file) return await uploadAvatar(file);
+
+    // Else, use pasted URL if any
+    return clean(avatarUrl);
   }
 
   async function save() {
     setErr(null);
     setOk(null);
     setSaving(true);
-    try {
-      const finalAvatar = await uploadAvatarIfNeeded();
 
-      // IMPORTANT: Partial save allowed.
-      // Only send what the user typed. No required fields.
+    try {
+      const finalAvatarUrl = await resolveAvatarUrl();
+
+      // Partial save: everything optional
       const payload = {
-        username: username.trim() || null,
-        bio: bio.trim() || null,
-        trader_style: traderStyle.trim() || null,
-        avatar_url: finalAvatar,
+        username: clean(username),
+        bio: clean(bio),
+        trader_style: clean(traderStyle),
+        avatar_url: finalAvatarUrl,
       };
 
       const res = await fetch("/api/profile/me", {
@@ -99,10 +122,12 @@ export default function ProfileEditor() {
       });
 
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Failed to save");
+      if (!res.ok) throw new Error(json?.error || "Failed to save profile");
 
       setOk("Saved.");
       setFile(null);
+      // keep avatarUrl as-is (so user sees what’s stored)
+      await load();
     } catch (e: any) {
       setErr(e?.message || "Save failed");
     } finally {
@@ -122,9 +147,7 @@ export default function ProfileEditor() {
           onChange={(e) => setUsername(e.target.value)}
           placeholder="terry_trades1"
         />
-        <div className="text-xs text-[#6B7A74]">
-          You can leave blank and set later.
-        </div>
+        <div className="text-xs text-[#6B7A74]">Optional. Set it later.</div>
       </div>
 
       <div className="space-y-2">
@@ -151,7 +174,9 @@ export default function ProfileEditor() {
         <div className="text-sm font-semibold">Profile picture</div>
 
         <div className="space-y-2">
-          <div className="text-xs text-[#6B7A74]">Option 1: paste image URL</div>
+          <div className="text-xs text-[#6B7A74]">
+            Option 1: paste image URL (used only if you don’t upload a file)
+          </div>
           <input
             className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
             value={avatarUrl}
@@ -161,20 +186,14 @@ export default function ProfileEditor() {
         </div>
 
         <div className="space-y-2">
-          <div className="text-xs text-[#6B7A74]">
-            Option 2: upload from computer
-          </div>
+          <div className="text-xs text-[#6B7A74]">Option 2: upload from computer</div>
           <input
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="block w-full text-sm"
           />
-          {file ? (
-            <div className="text-xs text-[#6B7A74]">
-              Selected: {file.name}
-            </div>
-          ) : null}
+          {file ? <div className="text-xs text-[#6B7A74]">Selected: {file.name}</div> : null}
         </div>
       </div>
 
