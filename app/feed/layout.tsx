@@ -1,17 +1,3 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-
-export default async function FeedLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/auth?next=/feed");
-
+export default function FeedLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
