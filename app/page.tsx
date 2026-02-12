@@ -10,6 +10,7 @@ export default function Home({
 }: {
   searchParams?: { code?: string; next?: string };
 }) {
+  // If Supabase ever sends users back to "/" with ?code=..., forward into our real callback.
   const code = searchParams?.code;
   if (code) {
     const next = searchParams?.next ?? "/feed";
@@ -81,17 +82,28 @@ export default function Home({
               — not hype.
             </p>
 
+            {/* ✅ CHANGED: two clear CTAs (login vs signup) */}
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              {/* New users */}
               <Link
-                href="/auth?next=/feed"
+                href="/auth?next=/feed&mode=signup"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95 shadow-sm"
               >
-                Enter Chat
+                New here? Sign up
               </Link>
 
+              {/* Existing users */}
+              <Link
+                href="/auth?next=/feed&mode=login"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-2xl border border-[#BFE8CF] bg-white text-[#0B0F0E] font-medium hover:shadow-sm"
+              >
+                Log in
+              </Link>
+
+              {/* Optional: keep Learn more as text link to reduce button clutter */}
               <Link
                 href="/about"
-                className="inline-flex items-center justify-center px-6 py-3 rounded-2xl border border-[#BFE8CF] bg-white text-[#0B0F0E] font-medium hover:shadow-sm"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-2xl border border-[#D7E4DD] bg-white text-[#0B0F0E] font-medium hover:shadow-sm"
               >
                 Learn more
               </Link>
