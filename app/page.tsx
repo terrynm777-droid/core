@@ -1,54 +1,69 @@
+// app/page.tsx
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import CoreLogo from "@/app/components/CoreLogo";
 
-export default async function HomePage() {
-  const supabase = await createClient(); // <- IMPORTANT if createClient is async
+import TrendingLive from "@/components/TrendingLive";
+import StockSearch from "@/components/StockSearch";
+import HeadlinesLive from "@/components/HeadlinesLive";
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const loggedIn = !!user;
-
+export default function HomePage() {
   return (
-    <main className="min-h-screen bg-[#F7FAF8]">
-      <div className="flex justify-end p-6">
-        <Link href="/" aria-label="Home">
-          <CoreLogo />
-        </Link>
-      </div>
+    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {/* put your logo component here if you have one */}
+            <div className="font-semibold">CORE</div>
+          </div>
 
-      <div className="mx-auto max-w-xl px-6 pb-16">
-        <h1 className="text-4xl font-semibold tracking-tight">Core</h1>
-        <p className="mt-3 text-sm text-[#6B7A74]">
-          {loggedIn ? "You're logged in." : "Create an account or log in to enter the chat."}
-        </p>
-
-        <div className="mt-8 flex flex-col gap-3">
-          {loggedIn ? (
+          <div className="flex items-center gap-2">
             <Link
-              href="/feed"
-              className="w-full rounded-2xl bg-[#22C55E] px-4 py-3 text-center text-white font-medium"
+              href="/auth"
+              className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
             >
-              Enter chat
+              Sign up / Log in
             </Link>
-          ) : (
-            <>
+          </div>
+        </div>
+
+        <div className="mt-10 grid grid-cols-1 gap-10 lg:grid-cols-2">
+          {/* Left: hero */}
+          <div className="pt-10">
+            <h1 className="text-5xl font-semibold leading-tight">
+              Markets, news, and discussion—{" "}
+              <span className="text-[#2E9B5D]">clean and calm.</span>
+            </h1>
+
+            <p className="mt-6 max-w-xl text-lg text-[#2B3A35]">
+              CORE is a social platform for people who want clarity: live market
+              signals, searchable stocks, and conversations grounded in evidence
+              — not hype.
+            </p>
+
+            <div className="mt-8 flex items-center gap-3">
               <Link
-                href="/auth/signup"
-                className="w-full rounded-2xl bg-[#22C55E] px-4 py-3 text-center text-white font-medium"
+                href="/auth"
+                className="rounded-2xl bg-[#2E9B5D] px-6 py-3 text-sm font-semibold text-white hover:opacity-95"
               >
-                Sign up
+                Create account
               </Link>
+
               <Link
-                href="/auth/login"
-                className="w-full rounded-2xl border border-[#D7E4DD] bg-white px-4 py-3 text-center font-medium"
+                href="/feed"
+                className="rounded-2xl border border-[#D7E4DD] bg-white px-6 py-3 text-sm font-semibold hover:shadow-sm"
               >
-                Log in
+                Enter chat
               </Link>
-            </>
-          )}
+            </div>
+          </div>
+
+          {/* Right: widget card */}
+          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="space-y-6">
+              <TrendingLive />
+              <StockSearch />
+              <HeadlinesLive />
+            </div>
+          </div>
         </div>
       </div>
     </main>
