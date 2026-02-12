@@ -1,3 +1,4 @@
+import Link from "next/link";
 import ProfileEditor from "./ui/ProfileEditor";
 
 export default function ProfileSettingsPage() {
@@ -9,7 +10,9 @@ export default function ProfileSettingsPage() {
             CORE
           </div>
 
-          <h1 className="mt-2 text-2xl font-semibold">Set up your profile</h1>
+          <h1 className="mt-2 text-2xl font-semibold">
+            Set up your profile
+          </h1>
 
           <p className="mt-2 text-sm text-[#6B7A74]">
             Choose a username. This is what shows on the feed.
@@ -18,12 +21,12 @@ export default function ProfileSettingsPage() {
 
         {/* Portfolio shortcut */}
         <div className="mb-3 flex justify-end">
-          <a
+          <Link
             href="/settings/portfolio"
             className="inline-flex items-center justify-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
           >
             Edit portfolio
-          </a>
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">

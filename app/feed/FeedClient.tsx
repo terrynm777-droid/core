@@ -65,6 +65,7 @@ export default function FeedClient() {
               href="/auth/signout"
               className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl border border-[#D7E4DD] bg-white font-medium hover:shadow-sm"
             >
+<Link href="/settings/profile" className="inline-flex items-center justify-center px-5 py-2.5 rounded-2xl border border-[#D7E4DD] bg-white font-medium hover:shadow-sm">Profile</Link>
               Sign out
             </Link>
           </div>
