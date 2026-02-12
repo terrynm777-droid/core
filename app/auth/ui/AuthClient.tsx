@@ -1,8 +1,7 @@
-// app/auth/AuthClient.tsx
 "use client";
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -19,18 +18,41 @@ function safeNext(next: string) {
 
 type Mode = "login" | "signup";
 
-export default function AuthClient({
-  next,
-  mode,
-}: {
-  next: string;
-  mode: Mode;
-}) {
+type MeProfile = {
+  id: string;
+  username: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  traderStyle: string | null;
+  portfolio: any[] | null;
+  portfolioPublic: boolean | null;
+};
+
+async function postAuthRedirect(nextSafe: string) {
+  // Option A: force profile setup if username missing
+  try {
+    const res = await fetch("/api/profile/me", { cache: "no-store" });
+    const data = await res.json();
+    if (res.ok) {
+      const profile: MeProfile | null = data?.profile ?? null;
+      if (!profile?.username) {
+        window.location.href = "/settings/profile";
+        return;
+      }
+    }
+  } catch {
+    // ignore; fall through to nextSafe
+  }
+
+  window.location.href = nextSafe;
+}
+
+export default function AuthClient({ next, mode }: { next: string; mode: Mode }) {
   const sp = useSearchParams();
   const nextSafe = useMemo(() => safeNext(next || "/feed"), [next]);
   const nextEncoded = useMemo(() => encodeURIComponent(nextSafe), [nextSafe]);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [tab, setTab] = useState<Mode>(() => {
     const m = (sp.get("mode") as Mode | null) ?? mode;
@@ -43,9 +65,7 @@ export default function AuthClient({
 
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState<
-    "google" | "login" | "signup" | "magic"
-  | null>(null);
+  const [loading, setLoading] = useState<"google" | "login" | "signup" | "magic" | null>(null);
 
   function redirectToCallback() {
     return `${window.location.origin}/auth/callback?next=${nextEncoded}`;
@@ -83,10 +103,7 @@ export default function AuthClient({
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: clean,
-      password: pw,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email: clean, password: pw });
 
     setLoading(null);
     if (error) {
@@ -94,8 +111,7 @@ export default function AuthClient({
       return;
     }
 
-    // If your feed is server-gated, hard navigate to ensure fresh session.
-    window.location.href = nextSafe;
+    await postAuthRedirect(nextSafe);
   }
 
   async function onSignup(e: React.FormEvent) {
@@ -121,12 +137,12 @@ export default function AuthClient({
       return;
     }
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: clean,
       password: pw,
       options: {
-        // If email confirmations are ON, Supabase will send a confirmation email
-        // and may redirect through callback.
+        // If confirmations are OFF, the session is created immediately.
+        // If confirmations are ON, they must confirm then login.
         emailRedirectTo: redirectToCallback(),
       },
     });
@@ -138,13 +154,17 @@ export default function AuthClient({
       return;
     }
 
-    setMsg(
-      "Account created. If email confirmation is enabled, check your inbox to confirm. Then log in."
-    );
+    // If email confirmation is ON, user won't have a session yet.
+    if (!data.session) {
+      setMsg("Account created. Check your email to confirm, then log in.");
+      return;
+    }
+
+    await postAuthRedirect(nextSafe);
   }
 
-  async function sendMagicLink(e: React.FormEvent) {
-    e.preventDefault();
+  async function sendMagicLink(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     setErr(null);
     setMsg(null);
     setLoading("magic");
@@ -170,20 +190,13 @@ export default function AuthClient({
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-md">
         <div className="mb-6">
-          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">
-            CORE
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold">
-            {tab === "login" ? "Log in" : "Create account"}
-          </h1>
+          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">CORE</div>
+          <h1 className="mt-2 text-2xl font-semibold">{tab === "login" ? "Log in" : "Create account"}</h1>
           <p className="mt-2 text-sm text-[#6B7A74]">
-            {tab === "login"
-              ? "Log in as a registered member."
-              : "New here? Create an account in under a minute."}
+            {tab === "login" ? "Log in as a registered member." : "New here? Create an account in under a minute."}
           </p>
         </div>
 
-        {/* Tabs */}
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -193,9 +206,7 @@ export default function AuthClient({
               setMsg(null);
             }}
             className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
-              tab === "login"
-                ? "border-[#0B0F0E] bg-white"
-                : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
+              tab === "login" ? "border-[#0B0F0E] bg-white" : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
             }`}
           >
             Log in
@@ -208,16 +219,13 @@ export default function AuthClient({
               setMsg(null);
             }}
             className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
-              tab === "signup"
-                ? "border-[#0B0F0E] bg-white"
-                : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
+              tab === "signup" ? "border-[#0B0F0E] bg-white" : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
             }`}
           >
             Sign up
           </button>
         </div>
 
-        {/* Google */}
         <button
           onClick={signInWithGoogle}
           disabled={loading !== null}
@@ -228,7 +236,6 @@ export default function AuthClient({
 
         <div className="my-6 text-center text-sm text-[#6B7A74]">or</div>
 
-        {/* Password form */}
         {tab === "login" ? (
           <form onSubmit={onLogin} className="space-y-3">
             <input
@@ -256,12 +263,7 @@ export default function AuthClient({
 
             <button
               type="button"
-              onClick={() => {
-                setErr(null);
-                setMsg(null);
-                // quick switch to magic link helper, stays secondary
-                sendMagicLink(new Event("submit") as any);
-              }}
+              onClick={() => sendMagicLink()}
               disabled={loading !== null}
               className="w-full rounded-2xl border border-[#D7E4DD] bg-white py-3 text-sm font-medium hover:bg-[#F3F7F5] disabled:opacity-60"
             >
@@ -301,10 +303,9 @@ export default function AuthClient({
               {loading === "signup" ? "Creating…" : "Create account"}
             </button>
 
-            <form onSubmit={sendMagicLink} />
             <button
               type="button"
-              onClick={(e) => sendMagicLink(e as any)}
+              onClick={() => sendMagicLink()}
               disabled={loading !== null}
               className="w-full rounded-2xl border border-[#D7E4DD] bg-white py-3 text-sm font-medium hover:bg-[#F3F7F5] disabled:opacity-60"
             >
@@ -317,8 +318,7 @@ export default function AuthClient({
         {msg && <p className="mt-4 text-sm text-[#4B5A55]">{msg}</p>}
 
         <div className="mt-6 text-xs text-[#6B7A74]">
-          Redirect after auth:{" "}
-          <span className="font-mono text-[#3E4C47]">{nextSafe}</span>
+          Redirect after auth: <span className="font-mono text-[#3E4C47]">{nextSafe}</span>
         </div>
 
         <div className="mt-6 text-xs text-[#6B7A74]">
