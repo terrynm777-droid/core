@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("posts")
-    .select("id, content, created_at")
+    .select("id, content, created_at, author_id")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -36,8 +36,8 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase
     .from("posts")
-    .insert({ content, user_id: user.id })
-    .select("id, content, created_at")
+    .insert({ content, author_id: user.id })
+    .select("id, content, created_at, author_id")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
