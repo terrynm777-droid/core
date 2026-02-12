@@ -5,16 +5,6 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type Mode = "login" | "signup";
-
-type MeProfile = {
-  id: string;
-  username: string | null;
-  avatar_url: string | null;
-  bio: string | null;
-  trader_style: string | null;
-};
-
 function safeNext(next: string) {
   try {
     const decoded = decodeURIComponent(next || "");
@@ -26,27 +16,31 @@ function safeNext(next: string) {
   }
 }
 
-async function postAuthRedirect(nextSafe: string) {
-fix/portfolio-link
+type Mode = "login" | "signup";
 
-  // Force profile setup if username missing
- main
+type MeProfile = {
+  id: string;
+  username: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  traderStyle: string | null;
+  portfolio: any[] | null;
+  portfolioPublic: boolean | null;
+};
+
+async function postAuthRedirect(nextSafe: string) {
   try {
     const res = await fetch("/api/profile/me", { cache: "no-store" });
-    const data = await res.json();
+    const data = await res.json().catch(() => null);
     if (res.ok) {
-      const p: MeProfile | null = data?.profile ?? null;
-      if (!p?.username) {
+      const profile: MeProfile | null = data?.profile ?? null;
+      if (!profile?.username) {
         window.location.href = "/settings/profile";
         return;
       }
     }
   } catch {
- fix/portfolio-link
     // ignore
-
-    // ignore; fall through
- main
   }
   window.location.href = nextSafe;
 }
@@ -96,13 +90,10 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     setLoading("login");
 
     const clean = email.trim();
-    if (!clean) return (setLoading(null), setErr("Enter your email."));
-    if (!pw) return (setLoading(null), setErr("Enter your password."));
+    if (!clean) return setLoading(null), setErr("Enter your email.");
+    if (!pw) return setLoading(null), setErr("Enter your password.");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: clean,
-      password: pw,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email: clean, password: pw });
 
     setLoading(null);
     if (error) return setErr(error.message);
@@ -117,9 +108,9 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     setLoading("signup");
 
     const clean = email.trim();
-    if (!clean) return (setLoading(null), setErr("Enter your email."));
-    if (!pw || pw.length < 8) return (setLoading(null), setErr("Password must be at least 8 characters."));
-    if (pw !== pw2) return (setLoading(null), setErr("Passwords do not match."));
+    if (!clean) return setLoading(null), setErr("Enter your email.");
+    if (!pw || pw.length < 8) return setLoading(null), setErr("Password must be at least 8 characters.");
+    if (pw !== pw2) return setLoading(null), setErr("Passwords do not match.");
 
     const { data, error } = await supabase.auth.signUp({
       email: clean,
@@ -130,9 +121,8 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     setLoading(null);
     if (error) return setErr(error.message);
 
-    // If confirmations are ON, there is no session yet.
     if (!data.session) {
-      setMsg("Account created. Check email to confirm, then log in.");
+      setMsg("Account created. Check your email to confirm, then log in.");
       return;
     }
 
@@ -141,13 +131,12 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
 
   async function sendMagicLink(e?: React.FormEvent) {
     if (e) e.preventDefault();
-
     setErr(null);
     setMsg(null);
     setLoading("magic");
 
     const clean = email.trim();
-    if (!clean) return (setLoading(null), setErr("Enter your email."));
+    if (!clean) return setLoading(null), setErr("Enter your email.");
 
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
@@ -170,21 +159,27 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           </p>
         </div>
 
-        {/* Tabs */}
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => (setTab("login"), setErr(null), setMsg(null))}
+            onClick={() => {
+              setTab("login");
+              setErr(null);
+              setMsg(null);
+            }}
             className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
               tab === "login" ? "border-[#0B0F0E] bg-white" : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
             }`}
           >
             Log in
           </button>
-
           <button
             type="button"
-            onClick={() => (setTab("signup"), setErr(null), setMsg(null))}
+            onClick={() => {
+              setTab("signup");
+              setErr(null);
+              setMsg(null);
+            }}
             className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
               tab === "signup" ? "border-[#0B0F0E] bg-white" : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
             }`}
@@ -193,7 +188,6 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           </button>
         </div>
 
-        {/* Google */}
         <button
           onClick={signInWithGoogle}
           disabled={loading !== null}
@@ -204,7 +198,6 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
 
         <div className="my-6 text-center text-sm text-[#6B7A74]">or</div>
 
-        {/* Password form */}
         {tab === "login" ? (
           <form onSubmit={onLogin} className="space-y-3">
             <input
