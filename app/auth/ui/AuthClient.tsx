@@ -27,6 +27,10 @@ function safeNext(next: string) {
 }
 
 async function postAuthRedirect(nextSafe: string) {
+fix/portfolio-link
+
+  // Force profile setup if username missing
+ main
   try {
     const res = await fetch("/api/profile/me", { cache: "no-store" });
     const data = await res.json();
@@ -38,7 +42,11 @@ async function postAuthRedirect(nextSafe: string) {
       }
     }
   } catch {
+ fix/portfolio-link
     // ignore
+
+    // ignore; fall through
+ main
   }
   window.location.href = nextSafe;
 }
@@ -91,7 +99,10 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     if (!clean) return (setLoading(null), setErr("Enter your email."));
     if (!pw) return (setLoading(null), setErr("Enter your password."));
 
-    const { error } = await supabase.auth.signInWithPassword({ email: clean, password: pw });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: clean,
+      password: pw,
+    });
 
     setLoading(null);
     if (error) return setErr(error.message);
@@ -130,6 +141,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
 
   async function sendMagicLink(e?: React.FormEvent) {
     if (e) e.preventDefault();
+
     setErr(null);
     setMsg(null);
     setLoading("magic");
@@ -158,6 +170,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           </p>
         </div>
 
+        {/* Tabs */}
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -180,6 +193,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
           </button>
         </div>
 
+        {/* Google */}
         <button
           onClick={signInWithGoogle}
           disabled={loading !== null}
@@ -190,6 +204,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
 
         <div className="my-6 text-center text-sm text-[#6B7A74]">or</div>
 
+        {/* Password form */}
         {tab === "login" ? (
           <form onSubmit={onLogin} className="space-y-3">
             <input
