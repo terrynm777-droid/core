@@ -1,13 +1,13 @@
+// app/auth/page.tsx
 import AuthClient from "./AuthClient";
-
-export const runtime = "nodejs";
 
 export default async function AuthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams?: { next?: string; mode?: string };
 }) {
-  const sp = await searchParams;
-  const next = sp?.next || "/feed";
-  return <AuthClient next={next} />;
+  const next = searchParams?.next ?? "/feed";
+  const mode = searchParams?.mode === "signup" ? "signup" : "login";
+
+  return <AuthClient next={next} mode={mode} />;
 }
