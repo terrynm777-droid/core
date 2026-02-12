@@ -1,27 +1,53 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-function pickPatch(body: any) {
-  // undefined = “not provided” → do not touch column
-  // null = explicit clear
-  const out: Record<string, any> = {};
-  const keys = ["username", "bio", "trader_style", "avatar_url"] as const;
+type PatchableKey = "username" | "bio" | "trader_style" | "avatar_url";
+type Patch = Partial<Record<PatchableKey, string | null>>;
+
+function isStringOrNull(x: unknown): x is string | null {
+  return typeof x === "string" || x === null;
+}
+
+function normalizeString(v: string): string | null {
+  const t = v.trim();
+  return t.length ? t : null;
+}
+
+function pickPatch(body: unknown): Patch {
+  if (!body || typeof body !== "object") return {};
+  const obj = body as Record<string, unknown>;
+
+  const keys: PatchableKey[] = ["username", "bio", "trader_style", "avatar_url"];
+  const out: Patch = {};
 
   for (const k of keys) {
-    if (Object.prototype.hasOwnProperty.call(body, k)) {
-      out[k] = body[k]; // can be null or string
+    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+      const val = obj[k];
+      // Only allow string or null. Ignore everything else.
+      if (isStringOrNull(val)) {
+        out[k] = typeof val === "string" ? normalizeString(val) : null;
+      }
     }
   }
+
   return out;
 }
 
-export async function GET() {
+async function getAuthedUser() {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  const user = auth?.user;
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return { supabase, user: null, authError: error.message };
+  return { supabase, user: data.user ?? null, authError: null };
+}
+
+export async function GET() {
+  const { supabase, user, authError } = await getAuthedUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: authError ?? "Not authenticated" },
+      { status: 401 }
+    );
   }
 
   const { data: profile, error } = await supabase
@@ -37,37 +63,49 @@ export async function GET() {
   return NextResponse.json({ profile: profile ?? null }, { status: 200 });
 }
 
-export async function PATCH(req: Request) {
-  const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  const user = auth?.user;
+export async function PATCH(req: NextRequest) {
+  const { supabase, user, authError } = await getAuthedUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: authError ?? "Not authenticated" },
+      { status: 401 }
+    );
   }
 
-  const body = await req.json().catch(() => ({}));
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+
   const patch = pickPatch(body);
 
-  // if they send nothing, do nothing
+  // if they send nothing usable, do nothing
   if (Object.keys(patch).length === 0) {
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, changed: false },
+      { status: 200 }
+    );
   }
 
-  // trim strings, keep nulls
-  for (const k of Object.keys(patch)) {
-    const v = patch[k];
-    if (typeof v === "string") patch[k] = v.trim() || null;
-  }
-
-  // UPSERT ensures row exists
-  const { error } = await supabase
+  // Upsert ensures row exists; return updated row for sanity
+  const { data, error } = await supabase
     .from("profiles")
-    .upsert({ id: user.id, ...patch }, { onConflict: "id" });
+    .upsert({ id: user.id, ...patch }, { onConflict: "id" })
+    .select("id, username, bio, trader_style, avatar_url")
+    .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message, code: (error as any).code ?? null },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return NextResponse.json(
+    { ok: true, changed: true, profile: data },
+    { status: 200 }
+  );
 }

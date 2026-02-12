@@ -16,10 +16,10 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set({ name, value, ...options });
+              cookieStore.set(name, value, options);
             });
           } catch {
-            // ignore (server component / middleware edge cases)
+            // server components can't always set cookies
           }
         },
       },

@@ -1,11 +1,3 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[];
-
 export type Database = {
   public: {
     Tables: {
@@ -41,13 +33,13 @@ export type Database = {
       posts: {
         Row: {
           id: string;
-          author_id: string;
           content: string;
+          author_id: string;
           created_at: string;
         };
         Insert: {
-          author_id: string;
           content: string;
+          author_id: string;
           created_at?: string;
         };
         Update: {
@@ -56,30 +48,73 @@ export type Database = {
         Relationships: [];
       };
 
-      portfolios: {
-        Row: { id: string; user_id: string; name: string; is_public: boolean; created_at: string };
-        Insert: { user_id: string; name: string; is_public?: boolean; created_at?: string };
-        Update: { name?: string; is_public?: boolean };
+      portfolio_snapshots: {
+        Row: {
+          id: string;
+          user_id: string;
+          total_value: number | null;
+          currency: string | null;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          total_value?: number | null;
+          currency?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          total_value?: number | null;
+          currency?: string | null;
+        };
         Relationships: [];
       };
 
       portfolio_holdings: {
-        Row: { id: string; portfolio_id: string; symbol: string; amount: number; currency: string; created_at: string };
-        Insert: { portfolio_id: string; symbol: string; amount: number; currency?: string; created_at?: string };
-        Update: { symbol?: string; amount?: number; currency?: string };
+        Row: {
+          id: string;
+          portfolio_id: string;
+          symbol: string;
+          amount: number;
+          currency: string | null;
+        };
+        Insert: {
+          portfolio_id: string;
+          symbol: string;
+          amount: number;
+          currency?: string | null;
+        };
+        Update: {
+          symbol?: string;
+          amount?: number;
+          currency?: string | null;
+        };
         Relationships: [];
       };
 
-      portfolio_snapshots: {
-        Row: { id: string; user_id: string; total_value: number | null; currency: string | null; created_at: string };
-        Insert: { user_id: string; total_value?: number | null; currency?: string | null; created_at?: string };
-        Update: { total_value?: number | null; currency?: string | null };
+      portfolios: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          is_public: boolean;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          name: string;
+          is_public?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          name?: string;
+          is_public?: boolean;
+        };
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
-    Functions: Record<string, never>;
-    Enums: Record<string, never>;
-    CompositeTypes: Record<string, never>;
+    Views: {};
+    Functions: {};
+    Enums: {};
+    CompositeTypes: {};
   };
 };
