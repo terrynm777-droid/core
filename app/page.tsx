@@ -82,8 +82,9 @@ export default function Home({
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              {/* ✅ CHANGED: defaults to signup mode */}
               <Link
-                href="/auth?next=/feed"
+                href="/auth?next=/feed&mode=signup"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95 shadow-sm"
               >
                 Enter Chat
