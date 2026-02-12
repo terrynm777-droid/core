@@ -1,29 +1,32 @@
-// app/settings/profile/page.tsx
-import Link from "next/link";
 import ProfileEditor from "./ui/ProfileEditor";
-
-export const dynamic = "force-dynamic";
 
 export default function ProfileSettingsPage() {
   return (
-    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
-      <div className="mx-auto max-w-xl px-6 py-10">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-2xl font-semibold">Edit profile</div>
-            <div className="mt-1 text-sm text-[#6B7A74]">
-              Username, bio, avatar, trader style.
-            </div>
+    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+      <div className="mx-auto max-w-md">
+        <div className="mb-6">
+          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">
+            CORE
           </div>
-          <Link
-            href="/feed"
-            className="rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm hover:shadow-sm"
-          >
-            Back
-          </Link>
+
+          <h1 className="mt-2 text-2xl font-semibold">Set up your profile</h1>
+
+          <p className="mt-2 text-sm text-[#6B7A74]">
+            Choose a username. This is what shows on the feed.
+          </p>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-[#D7E4DD] bg-white p-5">
+        {/* Portfolio shortcut */}
+        <div className="mb-3 flex justify-end">
+          <a
+            href="/settings/portfolio"
+            className="inline-flex items-center justify-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+          >
+            Edit portfolio
+          </a>
+        </div>
+
+        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
           <ProfileEditor />
         </div>
       </div>
