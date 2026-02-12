@@ -5,6 +5,16 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+type Mode = "login" | "signup";
+
+type MeProfile = {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  trader_style: string | null;
+};
+
 function safeNext(next: string) {
   try {
     const decoded = decodeURIComponent(next || "");
@@ -16,34 +26,20 @@ function safeNext(next: string) {
   }
 }
 
-type Mode = "login" | "signup";
-
-type MeProfile = {
-  id: string;
-  username: string | null;
-  avatarUrl: string | null;
-  bio: string | null;
-  traderStyle: string | null;
-  portfolio: any[] | null;
-  portfolioPublic: boolean | null;
-};
-
 async function postAuthRedirect(nextSafe: string) {
-  // Option A: force profile setup if username missing
   try {
     const res = await fetch("/api/profile/me", { cache: "no-store" });
     const data = await res.json();
     if (res.ok) {
-      const profile: MeProfile | null = data?.profile ?? null;
-      if (!profile?.username) {
+      const p: MeProfile | null = data?.profile ?? null;
+      if (!p?.username) {
         window.location.href = "/settings/profile";
         return;
       }
     }
   } catch {
-    // ignore; fall through to nextSafe
+    // ignore
   }
-
   window.location.href = nextSafe;
 }
 
@@ -92,24 +88,13 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     setLoading("login");
 
     const clean = email.trim();
-    if (!clean) {
-      setLoading(null);
-      setErr("Enter your email.");
-      return;
-    }
-    if (!pw) {
-      setLoading(null);
-      setErr("Enter your password.");
-      return;
-    }
+    if (!clean) return (setLoading(null), setErr("Enter your email."));
+    if (!pw) return (setLoading(null), setErr("Enter your password."));
 
     const { error } = await supabase.auth.signInWithPassword({ email: clean, password: pw });
 
     setLoading(null);
-    if (error) {
-      setErr(error.message);
-      return;
-    }
+    if (error) return setErr(error.message);
 
     await postAuthRedirect(nextSafe);
   }
@@ -121,42 +106,22 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     setLoading("signup");
 
     const clean = email.trim();
-    if (!clean) {
-      setLoading(null);
-      setErr("Enter your email.");
-      return;
-    }
-    if (!pw || pw.length < 8) {
-      setLoading(null);
-      setErr("Password must be at least 8 characters.");
-      return;
-    }
-    if (pw !== pw2) {
-      setLoading(null);
-      setErr("Passwords do not match.");
-      return;
-    }
+    if (!clean) return (setLoading(null), setErr("Enter your email."));
+    if (!pw || pw.length < 8) return (setLoading(null), setErr("Password must be at least 8 characters."));
+    if (pw !== pw2) return (setLoading(null), setErr("Passwords do not match."));
 
     const { data, error } = await supabase.auth.signUp({
       email: clean,
       password: pw,
-      options: {
-        // If confirmations are OFF, the session is created immediately.
-        // If confirmations are ON, they must confirm then login.
-        emailRedirectTo: redirectToCallback(),
-      },
+      options: { emailRedirectTo: redirectToCallback() },
     });
 
     setLoading(null);
+    if (error) return setErr(error.message);
 
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
-    // If email confirmation is ON, user won't have a session yet.
+    // If confirmations are ON, there is no session yet.
     if (!data.session) {
-      setMsg("Account created. Check your email to confirm, then log in.");
+      setMsg("Account created. Check email to confirm, then log in.");
       return;
     }
 
@@ -170,11 +135,7 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
     setLoading("magic");
 
     const clean = email.trim();
-    if (!clean) {
-      setLoading(null);
-      setErr("Enter your email.");
-      return;
-    }
+    if (!clean) return (setLoading(null), setErr("Enter your email."));
 
     const { error } = await supabase.auth.signInWithOtp({
       email: clean,
@@ -200,24 +161,17 @@ export default function AuthClient({ next, mode }: { next: string; mode: Mode })
         <div className="mb-4 grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => {
-              setTab("login");
-              setErr(null);
-              setMsg(null);
-            }}
+            onClick={() => (setTab("login"), setErr(null), setMsg(null))}
             className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
               tab === "login" ? "border-[#0B0F0E] bg-white" : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
             }`}
           >
             Log in
           </button>
+
           <button
             type="button"
-            onClick={() => {
-              setTab("signup");
-              setErr(null);
-              setMsg(null);
-            }}
+            onClick={() => (setTab("signup"), setErr(null), setMsg(null))}
             className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
               tab === "signup" ? "border-[#0B0F0E] bg-white" : "border-[#D7E4DD] bg-[#F7FAF8] hover:bg-white"
             }`}

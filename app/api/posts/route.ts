@@ -13,7 +13,7 @@ type PostRow = {
   content: string;
   created_at: string;
   author_id: string | null;
-  profiles: Profile | Profile[] | null; // Supabase can return object or array depending on relationship
+  profiles: Profile | Profile[] | null;
 };
 
 function pickProfile(p: PostRow["profiles"]): Profile | null {
@@ -27,7 +27,7 @@ function toApiPost(row: PostRow) {
   return {
     id: row.id,
     content: row.content,
-    createdAt: row.created_at, // normalize for frontend
+    createdAt: row.created_at,
     authorId: row.author_id,
     profile: profile
       ? {
@@ -62,9 +62,7 @@ export async function GET() {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const posts = (data ?? []).map((row: any) => toApiPost(row as PostRow));
   return NextResponse.json({ posts }, { status: 200 });
@@ -85,12 +83,8 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as { content?: string } | null;
   const content = body?.content?.trim();
 
-  if (!content) {
-    return NextResponse.json({ error: "content is required" }, { status: 400 });
-  }
-  if (content.length > 20000) {
-    return NextResponse.json({ error: "max 20,000 chars" }, { status: 400 });
-  }
+  if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
+  if (content.length > 20000) return NextResponse.json({ error: "max 20,000 chars" }, { status: 400 });
 
   const { data, error } = await supabase
     .from("posts")
@@ -98,10 +92,7 @@ export async function POST(req: Request) {
     .select(SELECT_WITH_PROFILE)
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const post = toApiPost(data as any as PostRow);
-  return NextResponse.json({ post }, { status: 201 });
+  return NextResponse.json({ post: toApiPost(data as any) }, { status: 201 });
 }

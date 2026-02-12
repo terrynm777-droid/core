@@ -1,22 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useState } from "react";
-
-type Profile = {
-  username: string | null;
-  avatar_url: string | null;
-  bio?: string | null;
-  trader_style?: string | null;
-};
 
 type Post = {
   id: string;
   content: string;
   createdAt: string;
-  author_id?: string | null;
-  profiles?: Profile | null;
+  authorId: string | null;
+  profile: {
+    username: string | null;
+    avatarUrl: string | null;
+    bio: string | null;
+    traderStyle: string | null;
+  } | null;
 };
 
 export default function FeedClient() {
@@ -86,62 +83,42 @@ export default function FeedClient() {
             </div>
           ) : (
             posts.map((p) => {
-              const prof = p.profiles ?? null;
-              const username = prof?.username ?? null;
-              const avatarUrl = prof?.avatar_url ?? null;
-
+              const u = p.profile?.username ?? "unknown";
               return (
                 <div
                   key={p.id}
                   className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm"
                 >
-                  {/* Author row */}
                   <div className="flex items-center justify-between">
-                    {username ? (
-                      <Link
-                        href={`/u/${encodeURIComponent(username)}`}
-                        className="flex items-center gap-3 hover:opacity-90"
-                      >
-                        <div className="h-9 w-9 overflow-hidden rounded-xl border border-[#D7E4DD] bg-white">
-                          <Image
-                            src={avatarUrl || "/brand/core-mark.png"}
-                            alt={username}
-                            width={36}
-                            height={36}
+                    <Link
+                      href={`/u/${encodeURIComponent(u)}`}
+                      className="flex items-center gap-3 hover:opacity-90"
+                    >
+                      <div className="h-9 w-9 rounded-full overflow-hidden border border-[#D7E4DD] bg-[#F3F7F5]">
+                        {p.profile?.avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.profile.avatarUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
                           />
-                        </div>
-                        <div className="leading-tight">
-                          <div className="text-sm font-semibold">{username}</div>
-                          {prof?.trader_style ? (
-                            <div className="text-xs text-[#6B7A74]">
-                              {prof.trader_style}
-                            </div>
-                          ) : null}
-                        </div>
-                      </Link>
-                    ) : (
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 overflow-hidden rounded-xl border border-[#D7E4DD] bg-white">
-                          <Image
-                            src="/brand/core-mark.png"
-                            alt="User"
-                            width={36}
-                            height={36}
-                          />
-                        </div>
-                        <div className="text-sm font-semibold text-[#4B5A55]">
-                          Unknown
+                        ) : null}
+                      </div>
+
+                      <div className="leading-tight">
+                        <div className="text-sm font-semibold">@{u}</div>
+                        <div className="text-xs text-[#6B7A74]">
+                          {p.profile?.traderStyle ?? "—"}
                         </div>
                       </div>
-                    )}
+                    </Link>
 
                     <div className="text-xs text-[#6B7A74]">
                       {new Date(p.createdAt).toLocaleString()}
                     </div>
                   </div>
 
-                  {/* Content */}
-                  <div className="mt-4 text-base font-medium whitespace-pre-wrap">
+                  <div className="mt-3 text-base font-medium whitespace-pre-wrap">
                     {p.content}
                   </div>
                 </div>
