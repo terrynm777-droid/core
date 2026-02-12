@@ -17,19 +17,17 @@ export default async function PublicProfilePage({
   const supabase = await createClient();
   const username = decodeURIComponent(params.username);
 
-  // Who is viewing?
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Load profile by username
-  const { data: profile, error: profileErr } = await supabase
+  const { data: profile } = await supabase
     .from("profiles")
     .select("id, username, avatar_url, bio, trader_style")
     .eq("username", username)
     .maybeSingle<ProfileRow>();
 
-  if (profileErr || !profile) {
+  if (!profile) {
     return (
       <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
         <div className="mx-auto max-w-2xl space-y-4">
@@ -41,9 +39,7 @@ export default async function PublicProfilePage({
           </Link>
           <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
             <div className="text-lg font-semibold">Profile not found</div>
-            <div className="mt-1 text-sm text-[#6B7A74]">
-              @{username} doesn’t exist.
-            </div>
+            <div className="mt-1 text-sm text-[#6B7A74]">@{username}</div>
           </div>
         </div>
       </main>
@@ -52,7 +48,6 @@ export default async function PublicProfilePage({
 
   const isOwner = !!user && user.id === profile.id;
 
-  // Recent posts by this user (by author_id = profile.id)
   const { data: posts } = await supabase
     .from("posts")
     .select("id, content, created_at")
@@ -86,7 +81,24 @@ export default async function PublicProfilePage({
                 Edit portfolio
               </Link>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex items-center gap-3">
+              <form action={`/api/follow?username=${encodeURIComponent(username)}`} method="post">
+                <button
+                  type="submit"
+                  className="rounded-2xl bg-[#22C55E] px-4 py-2 text-sm font-medium text-white"
+                >
+                  Follow
+                </button>
+              </form>
+              <Link
+                href={`/dm/${encodeURIComponent(username)}`}
+                className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+              >
+                DM
+              </Link>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
@@ -118,18 +130,14 @@ export default async function PublicProfilePage({
                   {profile.bio}
                 </div>
               ) : (
-                <div className="mt-3 text-sm text-[#6B7A74]">
-                  No bio yet.
-                </div>
+                <div className="mt-3 text-sm text-[#6B7A74]">No bio yet.</div>
               )}
             </div>
           </div>
         </div>
 
         <div className="space-y-3">
-          <div className="text-sm font-semibold text-[#0B0F0E]">
-            Recent posts
-          </div>
+          <div className="text-sm font-semibold">Recent posts</div>
 
           {posts && posts.length ? (
             posts.map((p: any) => (

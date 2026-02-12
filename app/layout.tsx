@@ -1,9 +1,10 @@
 import "./globals.css";
-import Image from "next/image";
+import type { Metadata } from "next";
+import CoreLogo from "@/app/components/CoreLogo";
 
-export const metadata = {
-  title: "CORE",
-  description: "CORE",
+export const metadata: Metadata = {
+  title: "Core",
+  description: "Core",
 };
 
 export default function RootLayout({
@@ -14,18 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {/* Global CORE mark (always visible) */}
-        <div className="fixed right-4 top-4 z-50">
-          <Image
-            src="/core-mark.png"
-            alt="CORE"
-            width={44}
-            height={44}
-            priority
-            className="rounded-xl shadow-sm"
-          />
-        </div>
-
+        <CoreLogo />
         {children}
       </body>
     </html>

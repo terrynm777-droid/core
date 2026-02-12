@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import AvatarMenu from "@/app/components/AvatarMenu";
 
@@ -9,10 +9,10 @@ type ApiPost = {
   content: string;
   createdAt: string;
   profile: {
+    id: string | null;
     username: string | null;
     avatarUrl: string | null;
     traderStyle: string | null;
-    bio: string | null;
   } | null;
 };
 
@@ -29,7 +29,6 @@ export default function FeedClient() {
   const [err, setErr] = useState<string | null>(null);
 
   const [me, setMe] = useState<MeProfile | null>(null);
-
   const [content, setContent] = useState("");
 
   async function loadMe() {
@@ -37,15 +36,12 @@ export default function FeedClient() {
       const res = await fetch("/api/profile/me", { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok) return;
-
       setMe({
         id: json?.profile?.id ?? null,
         username: json?.profile?.username ?? null,
         avatarUrl: json?.profile?.avatarUrl ?? null,
       });
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   async function loadPosts() {
@@ -84,13 +80,10 @@ export default function FeedClient() {
       if (!res.ok) throw new Error(json?.error || "Failed to post");
 
       const newPost = json?.post as ApiPost | undefined;
-      if (newPost?.id) {
-        setPosts((prev) => [newPost, ...prev]);
-        setContent("");
-      } else {
-        await loadPosts();
-        setContent("");
-      }
+      if (newPost?.id) setPosts((prev) => [newPost, ...prev]);
+      else await loadPosts();
+
+      setContent("");
     } catch (e: any) {
       setErr(e?.message || "Failed to post");
     } finally {
@@ -98,45 +91,33 @@ export default function FeedClient() {
     }
   }
 
-  const disabledPost = posting || !content.trim();
-
-  const header = (
-    <div className="flex items-center justify-between">
-      <h1 className="text-3xl font-semibold">Feed</h1>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={createPost}
-          disabled={disabledPost}
-          className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {posting ? "Posting…" : "Post"}
-        </button>
-
-        <button
-          type="button"
-          onClick={loadPosts}
-          className="rounded-2xl border border-[#D7E4DD] bg-white px-5 py-2 text-sm font-medium hover:shadow-sm"
-        >
-          Refresh
-        </button>
-
-        <AvatarMenu
-          me={
-            me
-              ? { id: me.id, username: me.username, avatarUrl: me.avatarUrl }
-              : null
-          }
-        />
-      </div>
-    </div>
-  );
-
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-2xl space-y-6">
-        {header}
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-semibold">Feed</h1>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={createPost}
+              disabled={posting || !content.trim()}
+              className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {posting ? "Posting…" : "Post"}
+            </button>
+
+            <button
+              type="button"
+              onClick={loadPosts}
+              className="rounded-2xl border border-[#D7E4DD] bg-white px-5 py-2 text-sm font-medium hover:shadow-sm"
+            >
+              Refresh
+            </button>
+
+            <AvatarMenu me={me} />
+          </div>
+        </div>
 
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
           <textarea
@@ -148,10 +129,7 @@ export default function FeedClient() {
           <div className="mt-3 flex items-center justify-between text-xs text-[#6B7A74]">
             <span>{content.length}/20000</span>
             {me?.username ? (
-              <Link
-                href={`/u/${encodeURIComponent(me.username)}`}
-                className="hover:underline"
-              >
+              <Link href={`/u/${encodeURIComponent(me.username)}`} className="hover:underline">
                 Posting as @{me.username}
               </Link>
             ) : (
@@ -176,6 +154,10 @@ export default function FeedClient() {
               const username = p.profile?.username ?? "unknown";
               const style = p.profile?.traderStyle ?? "—";
               const when = new Date(p.createdAt).toLocaleString();
+              const profileHref =
+                username !== "unknown"
+                  ? `/u/${encodeURIComponent(username)}`
+                  : null;
 
               return (
                 <div
@@ -184,19 +166,26 @@ export default function FeedClient() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      {username !== "unknown" ? (
-                        <Link
-                          href={`/u/${encodeURIComponent(username)}`}
-                          className="font-semibold hover:underline"
-                        >
+                      {profileHref ? (
+                        <Link href={profileHref} className="font-semibold hover:underline">
                           @{username}
                         </Link>
                       ) : (
-                        <div className="font-semibold text-[#6B7A74]">
-                          @unknown
-                        </div>
+                        <div className="font-semibold text-[#6B7A74]">@unknown</div>
                       )}
-                      <div className="text-xs text-[#6B7A74]">{style}</div>
+
+                      {/* treat “portfolio” click the same: style line is also a link */}
+                      {profileHref ? (
+                        <Link
+                          href={profileHref}
+                          className="block text-xs text-[#6B7A74] hover:underline"
+                          title="Open profile"
+                        >
+                          {style}
+                        </Link>
+                      ) : (
+                        <div className="text-xs text-[#6B7A74]">{style}</div>
+                      )}
                     </div>
 
                     <div className="text-xs text-[#6B7A74]">{when}</div>
