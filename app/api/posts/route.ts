@@ -13,17 +13,17 @@ type PostRow = {
   content: string;
   created_at: string;
   author_id: string | null;
-  profiles: Profile | Profile[] | null;
+  author: Profile | Profile[] | null; // IMPORTANT: we alias profiles -> author
 };
 
-function pickProfile(p: PostRow["profiles"]): Profile | null {
+function pickProfile(p: PostRow["author"]): Profile | null {
   if (!p) return null;
   if (Array.isArray(p)) return (p[0] as Profile) ?? null;
   return p as Profile;
 }
 
 function toApiPost(row: PostRow) {
-  const profile = pickProfile(row.profiles);
+  const profile = pickProfile(row.author);
   return {
     id: row.id,
     content: row.content,
@@ -40,12 +40,13 @@ function toApiPost(row: PostRow) {
   };
 }
 
+// IMPORTANT: explicit FK to disambiguate the duplicate relationship
 const SELECT_WITH_PROFILE = `
   id,
   content,
   created_at,
   author_id,
-  profiles(
+  author:profiles!posts_author_id_fkey(
     username,
     avatar_url,
     bio,
