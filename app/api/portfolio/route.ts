@@ -1,197 +1,108 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-type HoldingInput = {
-  symbol: string;
-  weight: number;
-  notes?: string | null;
-};
-
-async function getOrCreatePortfolioId(supabase: any, userId: string) {
-  const { data: existing, error: selErr } = await supabase
-    .from("portfolios")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (selErr) throw selErr;
-  if (existing?.id) return existing.id as string;
-
-  const { data: created, error: insErr } = await supabase
-    .from("portfolios")
-    .insert({ user_id: userId })
-    .select("id")
-    .single();
-
-  if (insErr) throw insErr;
-  return created.id as string;
+function normCurrency(c: any) {
+  const v = String(c || "USD").toUpperCase().trim();
+  const allowed = new Set(["USD","JPY","AUD","HKD","EUR","GBP","CNY","CAD","CHF","SGD"]);
+  return allowed.has(v) ? v : "USD";
 }
 
 export async function GET() {
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
+  if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (userErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  // ensure portfolio exists
+  let { data: portfolio } = await supabase
+    .from("portfolios")
+    .select("id, user_id, name, is_public")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  try {
-    const portfolioId = await getOrCreatePortfolioId(supabase, user.id);
-
-    const { data: portfolio, error: pErr } = await supabase
+  if (!portfolio) {
+    const ins = await supabase
       .from("portfolios")
-      .select("id, name, is_public, updated_at, created_at")
-      .eq("id", portfolioId)
+      .insert({ user_id: user.id, name: "My Portfolio", is_public: false })
+      .select("id, user_id, name, is_public")
       .single();
 
-    if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
-
-    const { data: holdings, error: hErr } = await supabase
-      .from("holdings")
-      .select("id, symbol, weight, notes, updated_at, created_at")
-      .eq("portfolio_id", portfolioId)
-      .order("weight", { ascending: false });
-
-    if (hErr) return NextResponse.json({ error: hErr.message }, { status: 500 });
-
-    return NextResponse.json(
-      { portfolio, holdings: holdings ?? [] },
-      { status: 200 }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Failed" },
-      { status: 500 }
-    );
+    if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 500 });
+    portfolio = ins.data;
   }
+
+  const { data: holdings, error } = await supabase
+    .from("portfolio_holdings")
+    .select("id, symbol, amount, currency")
+    .eq("portfolio_id", portfolio.id)
+    .order("created_at", { ascending: true });
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ portfolio, holdings: holdings ?? [] }, { status: 200 });
 }
 
 export async function PATCH(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
+  if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (userErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  const body = (await req.json().catch(() => null)) as any;
+  const name = String(body?.name ?? "My Portfolio").slice(0, 60);
+  const is_public = Boolean(body?.is_public);
 
-  const body = (await req.json().catch(() => null)) as
-    | { name?: string; is_public?: boolean }
-    | null;
+  // ensure exists then update
+  const { data: port, error: perr } = await supabase
+    .from("portfolios")
+    .upsert({ user_id: user.id, name, is_public }, { onConflict: "user_id" })
+    .select("id, user_id, name, is_public")
+    .single();
 
-  const name =
-    typeof body?.name === "string" ? body!.name.trim().slice(0, 50) : undefined;
-  const is_public =
-    typeof body?.is_public === "boolean" ? body!.is_public : undefined;
-
-  try {
-    const portfolioId = await getOrCreatePortfolioId(supabase, user.id);
-
-    const payload: any = {};
-    if (name !== undefined && name.length > 0) payload.name = name;
-    if (is_public !== undefined) payload.is_public = is_public;
-
-    const { data, error } = await supabase
-      .from("portfolios")
-      .update(payload)
-      .eq("id", portfolioId)
-      .select("id, name, is_public, updated_at, created_at")
-      .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    return NextResponse.json({ portfolio: data }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Failed" },
-      { status: 500 }
-    );
-  }
+  if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
+  return NextResponse.json({ portfolio: port }, { status: 200 });
 }
 
+// Replace-all holdings
 export async function PUT(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
+  if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (userErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const body = (await req.json().catch(() => null)) as any;
+  const rows = Array.isArray(body?.holdings) ? body.holdings : null;
+  if (!rows) return NextResponse.json({ error: "holdings array required" }, { status: 400 });
+
+  const { data: portfolio, error: perr } = await supabase
+    .from("portfolios")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
+  if (!portfolio) return NextResponse.json({ error: "Portfolio missing" }, { status: 500 });
+
+  // delete then insert
+  const del = await supabase.from("portfolio_holdings").delete().eq("portfolio_id", portfolio.id);
+  if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 });
+
+  const clean = rows
+    .map((r: any) => ({
+      portfolio_id: portfolio.id,
+      symbol: String(r.symbol || "").trim().toUpperCase(),
+      amount: Number(r.amount ?? 0),
+      currency: normCurrency(r.currency),
+    }))
+    .filter((r: any) => r.symbol && isFinite(r.amount) && r.amount > 0);
+
+  if (clean.length === 0) {
+    return NextResponse.json({ ok: true, holdings: [] }, { status: 200 });
   }
 
-  const body = (await req.json().catch(() => null)) as
-    | { holdings?: HoldingInput[] }
-    | null;
+  const ins = await supabase
+    .from("portfolio_holdings")
+    .insert(clean)
+    .select("id, symbol, amount, currency");
 
-  const holdings = Array.isArray(body?.holdings) ? body!.holdings! : null;
-  if (!holdings) {
-    return NextResponse.json({ error: "holdings is required" }, { status: 400 });
-  }
+  if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 500 });
 
-  // validate
-  const cleaned: HoldingInput[] = [];
-  for (const h of holdings) {
-    const symbol = String(h?.symbol || "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, "");
-    const weight = Number(h?.weight);
-    const notes =
-      h?.notes === undefined ? null : String(h.notes ?? "").slice(0, 200);
-
-    if (!symbol) continue;
-    if (!Number.isFinite(weight) || weight < 0 || weight > 100) {
-      return NextResponse.json(
-        { error: `Invalid weight for ${symbol}` },
-        { status: 400 }
-      );
-    }
-    cleaned.push({ symbol, weight, notes });
-  }
-
-  // optional: enforce sum <= 100 (you can change to === 100 later)
-  const sum = cleaned.reduce((acc, x) => acc + x.weight, 0);
-  if (sum > 100.0001) {
-    return NextResponse.json(
-      { error: `Total weight exceeds 100% (got ${sum.toFixed(2)}%)` },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const portfolioId = await getOrCreatePortfolioId(supabase, user.id);
-
-    // replace-all strategy
-    const { error: delErr } = await supabase
-      .from("holdings")
-      .delete()
-      .eq("portfolio_id", portfolioId);
-
-    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
-
-    if (cleaned.length > 0) {
-      const rows = cleaned.map((h) => ({
-        portfolio_id: portfolioId,
-        symbol: h.symbol,
-        weight: h.weight,
-        notes: h.notes ?? null,
-      }));
-
-      const { error: insErr } = await supabase.from("holdings").insert(rows);
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Failed" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({ ok: true, holdings: ins.data ?? [] }, { status: 200 });
 }
