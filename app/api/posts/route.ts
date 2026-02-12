@@ -8,7 +8,8 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("posts")
-    .select("id, content, created_at, author_id")
+    .select("id, content, created_at, author_id, profiles(username, avatar_url, bio, trader_style)")
+.order("created_at", { ascending: false });
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -37,7 +38,8 @@ export async function POST(req: Request) {
   const { data, error } = await supabase
     .from("posts")
     .insert({ content, author_id: user.id })
-    .select("id, content, created_at, author_id")
+    .select("id, content, created_at, author_id, profiles(username, avatar_url, bio, trader_style)")
+.order("created_at", { ascending: false });
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
