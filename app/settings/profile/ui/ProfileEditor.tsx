@@ -122,7 +122,7 @@ export default function ProfileEditor() {
       });
 
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Failed to save profile");
+      if (!res.ok) throw new Error(`${res.status} ${json?.error || "Failed to save profile"}`);
 
       setOk("Saved.");
       setFile(null);
