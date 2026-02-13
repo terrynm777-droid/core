@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// Force Node runtime (Supabase server client expects Node APIs)
 export const runtime = "nodejs";
 
 type SnapshotRow = {
@@ -12,80 +11,94 @@ type SnapshotRow = {
   currency: string | null;
 };
 
+// UTC day key: YYYY-MM-DD
+function dayKey(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
 export async function GET() {
   const supabase = await createClient();
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
-  if (userErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
-  // Expect a table like: portfolio_snapshots(user_id, total_value, currency, created_at)
+  // Pull enough rows to cover last 30 days (some days may have multiple rows)
   const { data, error } = await supabase
     .from("portfolio_snapshots")
     .select("id, created_at, user_id, total_value, currency")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(90);
+    .limit(200);
 
-  if (error) {
-    return NextResponse.json(
-      {
-        error:
-          error.message ||
-          "Failed to load snapshots. (Check table: portfolio_snapshots)",
-      },
-      { status: 500 }
-    );
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Collapse to one point per day (latest snapshot that day)
+  const byDay = new Map<string, number>();
+  for (const r of (data ?? []) as SnapshotRow[]) {
+    const k = String(r.created_at).slice(0, 10);
+    if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? 0));
   }
 
-  return NextResponse.json({ snapshots: (data ?? []) as SnapshotRow[] }, { status: 200 });
+  // Build last 30 days points (oldest -> newest)
+  const today = new Date();
+  const points: { day: string; total_usd: number }[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+    const k = dayKey(d);
+    points.push({ day: k, total_usd: byDay.get(k) ?? 0 });
+  }
+
+  return NextResponse.json({ points }, { status: 200 });
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   const supabase = await createClient();
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+  // Compute "total_value" as sum of holding amounts (your app currently treats allocation as amount)
+  const { data: portfolio, error: perr } = await supabase
+    .from("portfolios")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  if (userErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
+  if (!portfolio?.id) return NextResponse.json({ error: "Portfolio missing" }, { status: 500 });
 
-  const body = (await req.json().catch(() => null)) as
-    | { total_value?: number; currency?: string }
-    | null;
+  const { data: holdings, error: herr } = await supabase
+    .from("portfolio_holdings")
+    .select("amount")
+    .eq("portfolio_id", portfolio.id);
 
-  const totalValue =
-    typeof body?.total_value === "number" ? body.total_value : null;
-  const currency = body?.currency ? String(body.currency).toUpperCase() : null;
+  if (herr) return NextResponse.json({ error: herr.message }, { status: 500 });
 
-  const { data, error } = await supabase
+  const total = (holdings ?? []).reduce((acc: number, h: any) => acc + (Number(h.amount) || 0), 0);
+
+  // Enforce 1 snapshot per day: delete today's snapshot rows, then insert one
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+
+  const del = await supabase
+    .from("portfolio_snapshots")
+    .delete()
+    .eq("user_id", user.id)
+    .gte("created_at", start.toISOString())
+    .lt("created_at", end.toISOString());
+
+  if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 });
+
+  const ins = await supabase
     .from("portfolio_snapshots")
     .insert({
       user_id: user.id,
-      total_value: totalValue,
-      currency,
+      total_value: total,
+      currency: "USD",
     })
     .select("id, created_at, user_id, total_value, currency")
     .single();
 
-  if (error) {
-    return NextResponse.json(
-      {
-        error:
-          error.message ||
-          "Failed to create snapshot. (Check table: portfolio_snapshots)",
-      },
-      { status: 500 }
-    );
-  }
+  if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 500 });
 
-  return NextResponse.json({ snapshot: data as SnapshotRow }, { status: 201 });
+  return NextResponse.json({ snapshot: ins.data as SnapshotRow }, { status: 201 });
 }
