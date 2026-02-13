@@ -60,4 +60,3 @@ export async function PATCH(req: Request) {
 
   return NextResponse.json({ profile }, { status: 200 });
 }
-EOF
