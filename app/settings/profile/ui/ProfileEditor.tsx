@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type MeProfile = {
@@ -18,13 +19,13 @@ function clean(s: string) {
 
 function safeExtFromFileName(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() || "png";
-  // basic allowlist
   if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return ext;
   return "png";
 }
 
 export default function ProfileEditor() {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -67,10 +68,8 @@ export default function ProfileEditor() {
   }, []);
 
   async function uploadAvatar(fileToUpload: File): Promise<string> {
-    // Bucket must exist: "avatars"
-    // Policy must allow authenticated INSERT/UPSERT for their own path
     const ext = safeExtFromFileName(fileToUpload.name);
-    const userPart = "me"; // keep path simple; policy can be based on auth.uid() in object name if you prefer
+    const userPart = "me";
     const filePath = `${userPart}/${Date.now()}-${Math.random()
       .toString(16)
       .slice(2)}.${ext}`;
@@ -92,10 +91,7 @@ export default function ProfileEditor() {
   }
 
   async function resolveAvatarUrl(): Promise<string | null> {
-    // If user picked a file, that wins.
     if (file) return await uploadAvatar(file);
-
-    // Else, use pasted URL if any
     return clean(avatarUrl);
   }
 
@@ -107,7 +103,6 @@ export default function ProfileEditor() {
     try {
       const finalAvatarUrl = await resolveAvatarUrl();
 
-      // Partial save: everything optional
       const payload = {
         username: clean(username),
         bio: clean(bio),
@@ -126,8 +121,9 @@ export default function ProfileEditor() {
 
       setOk("Saved.");
       setFile(null);
-      // keep avatarUrl as-is (so user sees what’s stored)
-      await load();
+
+      router.push("/feed");
+      router.refresh();
     } catch (e: any) {
       setErr(e?.message || "Save failed");
     } finally {
