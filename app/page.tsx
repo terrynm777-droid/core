@@ -1,9 +1,10 @@
-// deploy bump
+// app/page.tsx
 import Link from "next/link";
 
-import TrendingLive from "./components/TrendingLive";
-import StockSearch from "./components/StockSearch";
-import HeadlinesLive from "./components/HeadlinesLive";
+import TrendingLive from "@/components/TrendingLive";
+import StockSearch from "@/components/StockSearch";
+import HeadlinesLive from "@/components/HeadlinesLive";
+
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
@@ -63,9 +64,6 @@ export default function HomePage() {
               <HeadlinesLive />
             </div>
           </div>
-        </div>
-        <div className="mt-10 text-center text-xs text-[#93A19B]">
-          Build: czrh5eet • pr-trigger
         </div>
       </div>
     </main>
