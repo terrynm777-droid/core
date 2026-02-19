@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type MeProfile = {
@@ -22,11 +23,11 @@ function clean(s: string) {
 
 function safeExtFromFileName(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() || "png";
-  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return ext;
-  return "png";
+  return ["png", "jpg", "jpeg", "webp", "gif"].includes(ext) ? ext : "png";
 }
 
 export default function ProfileEditor({ onSaved }: Props) {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
@@ -42,7 +43,6 @@ export default function ProfileEditor({ onSaved }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // for UI preview (file OR pasted url OR stored url)
   const [previewUrl, setPreviewUrl] = useState<string>("");
 
   async function load() {
@@ -74,7 +74,6 @@ export default function ProfileEditor({ onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // update preview when file changes
   useEffect(() => {
     if (!file) return;
     const u = URL.createObjectURL(file);
@@ -82,19 +81,21 @@ export default function ProfileEditor({ onSaved }: Props) {
     return () => URL.revokeObjectURL(u);
   }, [file]);
 
-  // update preview when user pastes url (only if no file selected)
   useEffect(() => {
     if (file) return;
     setPreviewUrl(avatarUrl || "");
   }, [avatarUrl, file]);
 
   async function uploadAvatar(fileToUpload: File): Promise<string> {
-    const ext = safeExtFromFileName(fileToUpload.name);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
-    // IMPORTANT:
-    // Using "me" means everyone uploads to same folder.
-    // It's OK for now, but better is auth uid. If you want later, we change it.
-    const filePath = `me/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+    if (error || !user) throw new Error("Not authenticated");
+
+    const ext = safeExtFromFileName(fileToUpload.name);
+    const filePath = `${user.id}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
 
     const { error: upErr } = await supabase.storage
       .from("avatars")
@@ -144,10 +145,11 @@ export default function ProfileEditor({ onSaved }: Props) {
       setOk("Saved.");
       setFile(null);
 
-      // reload so preview reflects stored url
       await load();
 
-      // ✅ redirect to feed
+      // force top-right avatar/menu to refresh
+      router.refresh();
+
       onSaved?.();
     } catch (e: any) {
       setErr(e?.message || "Save failed");
@@ -168,7 +170,6 @@ export default function ProfileEditor({ onSaved }: Props) {
           onChange={(e) => setUsername(e.target.value)}
           placeholder="terry_trades1"
         />
-        <div className="text-xs text-[#6B7A74]">Optional. Set it later.</div>
       </div>
 
       <div className="space-y-2">
@@ -195,7 +196,6 @@ export default function ProfileEditor({ onSaved }: Props) {
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">Profile picture</div>
 
-          {/* preview */}
           <div className="h-10 w-10 overflow-hidden rounded-full border border-[#D7E4DD] bg-white">
             {previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -210,9 +210,7 @@ export default function ProfileEditor({ onSaved }: Props) {
         </div>
 
         <div className="space-y-2">
-          <div className="text-xs text-[#6B7A74]">
-            Option 1: paste image URL (used only if you don’t upload a file)
-          </div>
+          <div className="text-xs text-[#6B7A74]">Option 1: paste image URL</div>
           <input
             className="w-full rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
             value={avatarUrl}
@@ -222,16 +220,14 @@ export default function ProfileEditor({ onSaved }: Props) {
         </div>
 
         <div className="space-y-2">
-          <div className="text-xs text-[#6B7A74]">Option 2: upload from computer</div>
+          <div className="text-xs text-[#6B7A74]">Option 2: upload</div>
           <input
             type="file"
             accept="image/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="block w-full text-sm"
           />
-          {file ? (
-            <div className="text-xs text-[#6B7A74]">Selected: {file.name}</div>
-          ) : null}
+          {file ? <div className="text-xs text-[#6B7A74]">Selected: {file.name}</div> : null}
         </div>
       </div>
 

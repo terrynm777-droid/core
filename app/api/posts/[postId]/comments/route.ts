@@ -41,7 +41,18 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const limit = Math.min(Number(url.searchParams.get("limit") ?? "20"), 50);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? "0"), 0);
 
-  // 1) fetch comments
+  // total count (top-level only)
+  const { count, error: countErr } = await supabase
+    .from("post_comments")
+    .select("id", { count: "exact", head: true })
+    .eq("post_id", postId)
+    .is("parent_comment_id", null);
+
+  if (countErr) {
+    return NextResponse.json({ error: countErr.message }, { status: 500, headers: corsHeaders });
+  }
+
+  // rows
   const { data: rows, error: rowsErr } = await supabase
     .from("post_comments")
     .select("id, post_id, user_id, body, created_at, parent_comment_id")
@@ -51,18 +62,15 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     .range(offset, offset + limit - 1);
 
   if (rowsErr) {
-    return NextResponse.json(
-      { error: rowsErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: rowsErr.message }, { status: 500, headers: corsHeaders });
   }
 
   const commentsRaw = (rows ?? []) as CommentRow[];
 
-  // 2) fetch profiles for those user_ids
+  // profiles for user_ids (NO relational select to avoid schema-cache relationship issues)
   const userIds = Array.from(new Set(commentsRaw.map((c) => c.user_id))).filter(Boolean);
 
-  let profilesById = new Map<string, Profile>();
+  const profilesById = new Map<string, Profile>();
   if (userIds.length) {
     const { data: profs, error: profErr } = await supabase
       .from("profiles")
@@ -70,10 +78,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       .in("id", userIds);
 
     if (profErr) {
-      return NextResponse.json(
-        { error: profErr.message },
-        { status: 500, headers: corsHeaders }
-      );
+      return NextResponse.json({ error: profErr.message }, { status: 500, headers: corsHeaders });
     }
 
     (profs ?? []).forEach((p: any) => {
@@ -88,18 +93,16 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 
   const comments = commentsRaw.map((c) => ({
     ...c,
-    author: profilesById.get(c.user_id) ?? {
-      id: c.user_id,
-      username: null,
-      display_name: null,
-      avatar_url: null,
-    },
+    author:
+      profilesById.get(c.user_id) ?? {
+        id: c.user_id,
+        username: null,
+        display_name: null,
+        avatar_url: null,
+      },
   }));
 
-  return NextResponse.json(
-    { comments, limit, offset },
-    { status: 200, headers: corsHeaders }
-  );
+  return NextResponse.json({ comments, total: count ?? 0, limit, offset }, { status: 200, headers: corsHeaders });
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
@@ -110,10 +113,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const user = auth?.user;
 
   if (authErr || !user) {
-    return NextResponse.json(
-      { error: "Not authenticated" },
-      { status: 401, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: corsHeaders });
   }
 
   const payload = (await req.json().catch(() => null)) as
@@ -124,19 +124,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const parent_comment_id = payload?.parent_comment_id ?? null;
 
   if (!text) {
-    return NextResponse.json(
-      { error: "body is required" },
-      { status: 400, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: "body is required" }, { status: 400, headers: corsHeaders });
   }
   if (text.length > 5000) {
-    return NextResponse.json(
-      { error: "max 5,000 chars" },
-      { status: 400, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: "max 5,000 chars" }, { status: 400, headers: corsHeaders });
   }
 
-  // insert comment
   const { data: inserted, error: insErr } = await supabase
     .from("post_comments")
     .insert({
@@ -149,13 +142,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     .single();
 
   if (insErr) {
-    return NextResponse.json(
-      { error: insErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: insErr.message }, { status: 500, headers: corsHeaders });
   }
 
-  // fetch profile for response (optional but fixes @unknown instantly)
   const { data: prof, error: profErr } = await supabase
     .from("profiles")
     .select("id, username, display_name, avatar_url")
@@ -163,10 +152,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     .maybeSingle();
 
   if (profErr) {
-    return NextResponse.json(
-      { error: profErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: profErr.message }, { status: 500, headers: corsHeaders });
   }
 
   const comment = {

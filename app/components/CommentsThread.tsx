@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import ReplyComposer from "@/app/components/ReplyComposer";
 
 type Author =
@@ -23,9 +24,10 @@ type Comment = {
 };
 
 function Avatar({ url, label }: { url?: string | null; label: string }) {
+  const [broken, setBroken] = useState(false);
   const initial = (label.trim()[0] ?? "?").toUpperCase();
 
-  if (!url) {
+  if (!url || broken) {
     return (
       <div className="h-7 w-7 rounded-full bg-[#E6EFEA] text-[#4B5B55] flex items-center justify-center text-xs font-semibold">
         {initial}
@@ -33,17 +35,13 @@ function Avatar({ url, label }: { url?: string | null; label: string }) {
     );
   }
 
-  // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
       src={url}
       alt={label}
       className="h-7 w-7 rounded-full object-cover border border-[#D7E4DD]"
       referrerPolicy="no-referrer"
-      onError={(e) => {
-        // If broken, fall back to initials block by hiding the image.
-        (e.currentTarget as HTMLImageElement).style.display = "none";
-      }}
+      onError={() => setBroken(true)}
     />
   );
 }
@@ -51,12 +49,24 @@ function Avatar({ url, label }: { url?: string | null; label: string }) {
 function AuthorLine({ author }: { author?: Author }) {
   const username = author?.username ?? "unknown";
   const display = author?.display_name ?? null;
-  const label = display ? `${display} (@${username})` : `@${username}`;
+  const label = display ? `${display}` : `@${username}`;
+
+  // Pick ONE route pattern and stick to it.
+  // If you don’t have profile pages yet, keep /settings/profile for now or make /u/[username] later.
+  const href = author?.username ? `/u/${encodeURIComponent(author.username)}` : "#";
 
   return (
     <div className="flex items-center gap-2">
       <Avatar url={author?.avatar_url} label={username} />
-      <span className="font-medium">{label}</span>
+
+      {author?.username ? (
+        <Link href={href} className="font-medium hover:underline">
+          {label}
+          <span className="text-[#6B7A74]"> (@{username})</span>
+        </Link>
+      ) : (
+        <span className="font-medium">@{username}</span>
+      )}
     </div>
   );
 }
@@ -73,7 +83,7 @@ export default function CommentsThread({
 
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState<number>(0);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -97,12 +107,8 @@ export default function CommentsThread({
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
 
-      const list = Array.isArray(json?.comments) ? (json.comments as Comment[]) : [];
-      setComments(list);
-
-      // prefer server total if provided, else fallback to list length
-      setTotal(typeof json?.total === "number" ? json.total : list.length);
-
+      setComments(Array.isArray(json?.comments) ? json.comments : []);
+      setTotal(typeof json?.total === "number" ? json.total : (json?.comments?.length ?? 0));
       setLoadedOnce(true);
     } catch (e: any) {
       setErrorMsg(e?.message || "Failed to load comments");
@@ -123,6 +129,7 @@ export default function CommentsThread({
       });
 
       const json = await res.json().catch(() => null);
+
       if (!res.ok) {
         setErrorMsg(json?.error || `HTTP ${res.status}`);
         return;
@@ -144,7 +151,6 @@ export default function CommentsThread({
     }
   }
 
-  // preload once when composer opens (so “View comments” is instant)
   useEffect(() => {
     if (showComposer && !loadedOnce) loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
