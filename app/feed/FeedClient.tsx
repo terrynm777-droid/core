@@ -155,16 +155,10 @@ export default function FeedClient() {
               const username = p.profile?.username ?? "unknown";
               const style = p.profile?.traderStyle ?? "—";
               const when = new Date(p.createdAt).toLocaleString();
-              const profileHref =
-                username !== "unknown"
-                  ? `/u/${encodeURIComponent(username)}`
-                  : null;
+              const profileHref = username !== "unknown" ? `/u/${encodeURIComponent(username)}` : null;
 
               return (
-                <div
-                  key={p.id}
-                  className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm"
-                >
+                <div key={p.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       {profileHref ? (
@@ -175,7 +169,6 @@ export default function FeedClient() {
                         <div className="font-semibold text-[#6B7A74]">@unknown</div>
                       )}
 
-                      {/* treat “portfolio” click the same: style line is also a link */}
                       {profileHref ? (
                         <Link
                           href={profileHref}
@@ -192,9 +185,9 @@ export default function FeedClient() {
                     <div className="text-xs text-[#6B7A74]">{when}</div>
                   </div>
 
-                  <div className="mt-3 whitespace-pre-wrap text-sm">
-                    {p.content}
-                  </div>
+                  <div className="mt-3 whitespace-pre-wrap text-sm">{p.content}</div>
+
+                  {/* ✅ Step 5: actions under every post */}
                   <PostActions postId={p.id} />
                 </div>
               );
