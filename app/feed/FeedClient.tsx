@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import AvatarMenu from "@/app/components/AvatarMenu";
+import PostActions from "@/app/components/PostActions";
 
 type ApiPost = {
   id: string;
@@ -194,6 +195,7 @@ export default function FeedClient() {
                   <div className="mt-3 whitespace-pre-wrap text-sm">
                     {p.content}
                   </div>
+                  <PostActions postId={p.id} />
                 </div>
               );
             })}
