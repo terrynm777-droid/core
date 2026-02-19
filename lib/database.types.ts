@@ -85,7 +85,7 @@ export type Database = {
         };
         Update: {
           symbol?: string;
-          amount?: number;
+          amount?: string | number; // if you want strict: change back to number
           currency?: string | null;
         };
         Relationships: [];
@@ -113,33 +113,34 @@ export type Database = {
       };
 
       post_comments: {
-  Row: {
-    id: string;
-    post_id: string;
-    user_id: string;
-    body: string;
-    created_at: string;
-    parent_comment_id: string | null;
-  };
-  Insert: {
-    id?: string;
-    post_id: string;
-    user_id: string;
-    body: string;
-    created_at?: string;
-    parent_comment_id?: string | null;
-  };
-  Update: {
-    id?: string;
-    post_id?: string;
-    user_id?: string;
-    body?: string;
-    created_at?: string;
-    parent_comment_id?: string | null;
-  };
-  Relationships: [];
-};
+        Row: {
+          id: string;
+          post_id: string;
+          user_id: string;
+          body: string;
+          created_at: string;
+          parent_comment_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          post_id: string;
+          user_id: string;
+          body: string;
+          created_at?: string;
+          parent_comment_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          post_id?: string;
+          user_id?: string;
+          body?: string;
+          created_at?: string;
+          parent_comment_id?: string | null;
+        };
+        Relationships: [];
+      };
     };
+
     Views: {};
     Functions: {};
     Enums: {};
