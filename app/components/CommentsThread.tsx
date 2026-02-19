@@ -11,7 +11,7 @@ type Comment = {
   user_id: string;
   body: string;
   created_at: string;
-  parent_comment_id: string | null;
+  parent_comment_id: number | null;
   author?: Author;
 };
 
@@ -21,12 +21,11 @@ function AuthorLine({ author }: { author?: Author }) {
 }
 
 export default function CommentsThread({ postId }: { postId: string }) {
-  const [showComposer, setShowComposer] = useState(false);
-  const [showComments, setShowComments] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [loadedOnce, setLoadedOnce] = useState(false);
 
   async function loadComments() {
     setLoading(true);
@@ -34,12 +33,11 @@ export default function CommentsThread({ postId }: { postId: string }) {
     try {
       const res = await fetch(
         `/api/posts/${encodeURIComponent(postId)}/comments?limit=50&offset=0`,
-        { cache: "no-store", credentials: "include" }
+        { cache: "no-store" }
       );
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
       setComments(Array.isArray(json?.comments) ? json.comments : []);
-      setLoadedOnce(true);
     } catch (e: any) {
       setErrorMsg(e?.message || "Failed to load comments");
     } finally {
@@ -54,7 +52,6 @@ export default function CommentsThread({ postId }: { postId: string }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: text }),
-      credentials: "include",
     });
 
     const json = await res.json().catch(() => null);
@@ -68,52 +65,53 @@ export default function CommentsThread({ postId }: { postId: string }) {
     if (created?.id) setComments((prev) => [...prev, created]);
     else await loadComments();
 
-    setShowComments(true);
-    setLoadedOnce(true);
+    setListOpen(true);
   }
 
-  // optional: pre-load once when composer opens (so "View comments" is instant)
+  // If user opens list, make sure it's loaded
   useEffect(() => {
-    if (showComposer && !loadedOnce) loadComments();
+    if (listOpen) loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showComposer]);
+  }, [listOpen]);
 
   return (
     <div className="mt-3 border-t border-[#E6EEE9] pt-2">
-      {/* LinkedIn-style actions */}
-      <div className="flex items-center gap-3">
+      {/* ONLY ONE action row */}
+      <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={() => {
-            setShowComposer(true);   // 1 click to comment
-            setShowComments(false);  // list stays hidden unless user opens it
+            setComposerOpen(true);     // open composer immediately
+            setListOpen(false);        // don’t force list open
           }}
-          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-white/60"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-black/5"
         >
           💬 <span>Comment</span>
         </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            const next = !showComments;
-            setShowComments(next);
-            setShowComposer(true); // keep input visible
-            if (next) loadComments();
-          }}
-          className="text-sm text-[#4B5B55] hover:underline"
-        >
-          {showComments ? "Hide comments" : "View comments"}
-        </button>
       </div>
 
-      {showComposer ? (
+      {/* Composer appears immediately after clicking Comment */}
+      {composerOpen ? (
         <div className="mt-2 rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-3">
           <ReplyComposer placeholder="Write a comment…" onSubmit={submitTopLevel} />
 
+          <div className="mt-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setListOpen((v) => !v)}
+              className="text-sm text-[#4B5B55] hover:underline"
+            >
+              {listOpen ? "Hide comments" : "View comments"}
+            </button>
+
+            <div className="text-xs text-[#6B7A74]">
+              {comments.length ? `${comments.length} comment(s)` : ""}
+            </div>
+          </div>
+
           {errorMsg ? <div className="mt-2 text-xs text-red-600">{errorMsg}</div> : null}
 
-          {showComments ? (
+          {listOpen ? (
             <div className="mt-3 space-y-3">
               {loading ? (
                 <div className="text-xs text-[#6B7A74]">Loading…</div>
