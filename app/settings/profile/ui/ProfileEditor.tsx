@@ -11,6 +11,10 @@ type MeProfile = {
   avatar_url: string | null;
 };
 
+type Props = {
+  onSaved?: () => void;
+};
+
 function clean(s: string) {
   const t = (s ?? "").trim();
   return t.length ? t : null;
@@ -18,12 +22,11 @@ function clean(s: string) {
 
 function safeExtFromFileName(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() || "png";
-  // basic allowlist
   if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return ext;
   return "png";
 }
 
-export default function ProfileEditor() {
+export default function ProfileEditor({ onSaved }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
@@ -32,12 +35,15 @@ export default function ProfileEditor() {
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
   const [traderStyle, setTraderStyle] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
 
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+
+  // for UI preview (file OR pasted url OR stored url)
+  const [previewUrl, setPreviewUrl] = useState<string>("");
 
   async function load() {
     setErr(null);
@@ -50,10 +56,12 @@ export default function ProfileEditor() {
       if (!res.ok) throw new Error(json?.error || "Failed to load profile");
 
       const p: MeProfile | null = json?.profile ?? null;
+
       setUsername(p?.username ?? "");
       setBio(p?.bio ?? "");
       setTraderStyle(p?.trader_style ?? "");
       setAvatarUrl(p?.avatar_url ?? "");
+      setPreviewUrl(p?.avatar_url ?? "");
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
     } finally {
@@ -66,14 +74,27 @@ export default function ProfileEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // update preview when file changes
+  useEffect(() => {
+    if (!file) return;
+    const u = URL.createObjectURL(file);
+    setPreviewUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+
+  // update preview when user pastes url (only if no file selected)
+  useEffect(() => {
+    if (file) return;
+    setPreviewUrl(avatarUrl || "");
+  }, [avatarUrl, file]);
+
   async function uploadAvatar(fileToUpload: File): Promise<string> {
-    // Bucket must exist: "avatars"
-    // Policy must allow authenticated INSERT/UPSERT for their own path
     const ext = safeExtFromFileName(fileToUpload.name);
-    const userPart = "me"; // keep path simple; policy can be based on auth.uid() in object name if you prefer
-    const filePath = `${userPart}/${Date.now()}-${Math.random()
-      .toString(16)
-      .slice(2)}.${ext}`;
+
+    // IMPORTANT:
+    // Using "me" means everyone uploads to same folder.
+    // It's OK for now, but better is auth uid. If you want later, we change it.
+    const filePath = `me/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
 
     const { error: upErr } = await supabase.storage
       .from("avatars")
@@ -87,15 +108,12 @@ export default function ProfileEditor() {
 
     const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
     const url = data?.publicUrl;
-    if (!url) throw new Error("Avatar upload succeeded but no public URL returned.");
+    if (!url) throw new Error("Upload succeeded but no public URL returned.");
     return url;
   }
 
   async function resolveAvatarUrl(): Promise<string | null> {
-    // If user picked a file, that wins.
     if (file) return await uploadAvatar(file);
-
-    // Else, use pasted URL if any
     return clean(avatarUrl);
   }
 
@@ -107,7 +125,6 @@ export default function ProfileEditor() {
     try {
       const finalAvatarUrl = await resolveAvatarUrl();
 
-      // Partial save: everything optional
       const payload = {
         username: clean(username),
         bio: clean(bio),
@@ -126,8 +143,12 @@ export default function ProfileEditor() {
 
       setOk("Saved.");
       setFile(null);
-      // keep avatarUrl as-is (so user sees what’s stored)
+
+      // reload so preview reflects stored url
       await load();
+
+      // ✅ redirect to feed
+      onSaved?.();
     } catch (e: any) {
       setErr(e?.message || "Save failed");
     } finally {
@@ -171,7 +192,22 @@ export default function ProfileEditor() {
       </div>
 
       <div className="space-y-3 rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
-        <div className="text-sm font-semibold">Profile picture</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Profile picture</div>
+
+          {/* preview */}
+          <div className="h-10 w-10 overflow-hidden rounded-full border border-[#D7E4DD] bg-white">
+            {previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewUrl}
+                alt="avatar preview"
+                className="h-full w-full object-cover"
+                onError={() => setPreviewUrl("")}
+              />
+            ) : null}
+          </div>
+        </div>
 
         <div className="space-y-2">
           <div className="text-xs text-[#6B7A74]">
@@ -193,7 +229,9 @@ export default function ProfileEditor() {
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="block w-full text-sm"
           />
-          {file ? <div className="text-xs text-[#6B7A74]">Selected: {file.name}</div> : null}
+          {file ? (
+            <div className="text-xs text-[#6B7A74]">Selected: {file.name}</div>
+          ) : null}
         </div>
       </div>
 
