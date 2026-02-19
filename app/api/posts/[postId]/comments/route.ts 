@@ -6,22 +6,9 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ postId: string }> };
 
-const SELECT_COMMENTS = `
-  id,
-  post_id,
-  user_id,
-  body,
-  created_at,
-  parent_comment_id,
-  author:profiles(
-    username,
-    avatar_url
-  )
-`;
-
 export async function GET(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
-  const supabase: any = await createClient();
+  const supabase = await createClient();
 
   const url = new URL(req.url);
   const limit = Math.min(Number(url.searchParams.get("limit") ?? "20"), 50);
@@ -29,20 +16,19 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 
   const { data, error } = await supabase
     .from("post_comments")
-    .select(SELECT_COMMENTS)
+    .select("id, post_id, user_id, body, created_at, parent_comment_id")
     .eq("post_id", postId)
     .is("parent_comment_id", null)
     .order("created_at", { ascending: true })
     .range(offset, offset + limit - 1);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
   return NextResponse.json({ comments: data ?? [], limit, offset }, { status: 200 });
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
-  const supabase: any = await createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
@@ -60,10 +46,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const { data, error } = await supabase
     .from("post_comments")
     .insert({ post_id: postId, user_id: user.id, body: text, parent_comment_id: null })
-    .select(SELECT_COMMENTS)
+    .select("id, post_id, user_id, body, created_at, parent_comment_id")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
   return NextResponse.json({ comment: data }, { status: 201 });
 }

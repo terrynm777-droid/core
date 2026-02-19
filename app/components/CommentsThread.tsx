@@ -34,7 +34,7 @@ export default function CommentsThread({ postId }: { postId: string }) {
         { cache: "no-store" }
       );
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Failed to load comments");
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
       setComments(Array.isArray(json?.comments) ? json.comments : []);
     } finally {
       setLoading(false);
@@ -52,17 +52,23 @@ export default function CommentsThread({ postId }: { postId: string }) {
     setRepliesByParent((prev) => ({ ...prev, [parentCommentId]: replies }));
   }
 
-  // ✅ Step 6: always refresh after POST so it appears immediately
   async function submitTopLevel(text: string) {
     const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: text }),
     });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(json?.error || "Failed to reply");
 
-    await loadComments(); // <- guarantees it shows up
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      alert(json?.error || `HTTP ${res.status}`);
+      return;
+    }
+
+    const created = json?.comment;
+    if (created?.id) setComments((prev) => [...prev, created]);
+    else await loadComments();
   }
 
   async function submitReply(parentCommentId: string, text: string) {
@@ -71,10 +77,15 @@ export default function CommentsThread({ postId }: { postId: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: text, postId }),
     });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(json?.error || "Failed to reply");
 
-    await loadReplies(parentCommentId); // refresh replies list
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      alert(json?.error || `HTTP ${res.status}`);
+      return;
+    }
+
+    await loadReplies(parentCommentId);
   }
 
   useEffect(() => {
@@ -83,59 +94,69 @@ export default function CommentsThread({ postId }: { postId: string }) {
   }, [open]);
 
   return (
-    <div className="mt-3">
-      <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-3">
-        <ReplyComposer placeholder="Write a comment…" onSubmit={submitTopLevel} />
+    <div className="mt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-xl border border-[#D7E4DD] bg-white px-3 py-1.5 text-sm hover:shadow-sm"
+      >
+        Comment {open ? "▲" : "▼"}
+      </button>
 
-        <div className="mt-3 space-y-3">
-          {loading ? (
-            <div className="text-xs text-[#6B7A74]">Loading…</div>
-          ) : comments.length === 0 ? (
-            <div className="text-xs text-[#6B7A74]">No comments yet.</div>
-          ) : (
-            comments.map((c) => {
-              const replies = repliesByParent[c.id] ?? [];
-              return (
-                <div key={c.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-3">
-                  <div className="flex items-center justify-between text-xs text-[#6B7A74]">
-                    <AuthorLine author={c.author} />
-                    <span>{new Date(c.created_at).toLocaleString()}</span>
-                  </div>
+      {open ? (
+        <div className="mt-3 rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-3">
+          <ReplyComposer placeholder="Write a comment…" onSubmit={submitTopLevel} />
 
-                  <div className="mt-1 whitespace-pre-wrap text-sm">{c.body}</div>
+          <div className="mt-3 space-y-3">
+            {loading ? (
+              <div className="text-xs text-[#6B7A74]">Loading…</div>
+            ) : comments.length === 0 ? (
+              <div className="text-xs text-[#6B7A74]">No comments yet.</div>
+            ) : (
+              comments.map((c) => {
+                const replies = repliesByParent[c.id] ?? [];
+                return (
+                  <div key={c.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-3">
+                    <div className="flex items-center justify-between text-xs text-[#6B7A74]">
+                      <AuthorLine author={c.author} />
+                      <span>{new Date(c.created_at).toLocaleString()}</span>
+                    </div>
 
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      onClick={() => loadReplies(c.id)}
-                      className="rounded-xl border border-[#D7E4DD] bg-white px-2 py-1 text-xs hover:shadow-sm"
-                    >
-                      Load replies ({replies.length})
-                    </button>
+                    <div className="mt-1 whitespace-pre-wrap text-sm">{c.body}</div>
 
-                    <div className="mt-2 space-y-2 border-l border-[#D7E4DD] pl-3">
-                      {replies.map((r) => (
-                        <div key={r.id} className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-2">
-                          <div className="flex items-center justify-between text-xs text-[#6B7A74]">
-                            <AuthorLine author={r.author} />
-                            <span>{new Date(r.created_at).toLocaleString()}</span>
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => loadReplies(c.id)}
+                        className="rounded-xl border border-[#D7E4DD] bg-white px-2 py-1 text-xs hover:shadow-sm"
+                      >
+                        Load replies ({replies.length})
+                      </button>
+
+                      <div className="mt-2 space-y-2 border-l border-[#D7E4DD] pl-3">
+                        {replies.map((r) => (
+                          <div key={r.id} className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-2">
+                            <div className="flex items-center justify-between text-xs text-[#6B7A74]">
+                              <AuthorLine author={r.author} />
+                              <span>{new Date(r.created_at).toLocaleString()}</span>
+                            </div>
+                            <div className="mt-1 whitespace-pre-wrap text-sm">{r.body}</div>
                           </div>
-                          <div className="mt-1 whitespace-pre-wrap text-sm">{r.body}</div>
-                        </div>
-                      ))}
+                        ))}
 
-                      <ReplyComposer
-                        placeholder="Reply to this comment…"
-                        onSubmit={(text) => submitReply(c.id, text)}
-                      />
+                        <ReplyComposer
+                          placeholder="Reply to this comment…"
+                          onSubmit={(text) => submitReply(c.id, text)}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })
-          )}
+                );
+              })
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
