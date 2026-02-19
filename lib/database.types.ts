@@ -111,6 +111,34 @@ export type Database = {
         };
         Relationships: [];
       };
+
+      post_comments: {
+  Row: {
+    id: string;
+    post_id: string;
+    user_id: string;
+    body: string;
+    created_at: string;
+    parent_comment_id: string | null;
+  };
+  Insert: {
+    id?: string;
+    post_id: string;
+    user_id: string;
+    body: string;
+    created_at?: string;
+    parent_comment_id?: string | null;
+  };
+  Update: {
+    id?: string;
+    post_id?: string;
+    user_id?: string;
+    body?: string;
+    created_at?: string;
+    parent_comment_id?: string | null;
+  };
+  Relationships: [];
+};
     };
     Views: {};
     Functions: {};
