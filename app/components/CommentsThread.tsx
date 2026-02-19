@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import ReplyComposer from "@/app/components/ReplyComposer";
 
 type Author = { username: string | null; avatar_url: string | null } | null;
@@ -11,7 +11,7 @@ type Comment = {
   user_id: string;
   body: string;
   created_at: string;
-  parent_comment_id: number | null;
+  parent_comment_id: string | null;
   author?: Author;
 };
 
@@ -21,13 +21,12 @@ function AuthorLine({ author }: { author?: Author }) {
 }
 
 export default function CommentsThread({ postId }: { postId: string }) {
-  const [showComposer, setShowComposer] = useState(false); // comment button -> true
-  const [showComments, setShowComments] = useState(false); // dropdown list
+  const [showComposer, setShowComposer] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const commentsLoaded = useMemo(() => comments.length > 0, [comments.length]);
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   async function loadComments() {
     setLoading(true);
@@ -35,11 +34,12 @@ export default function CommentsThread({ postId }: { postId: string }) {
     try {
       const res = await fetch(
         `/api/posts/${encodeURIComponent(postId)}/comments?limit=50&offset=0`,
-        { cache: "no-store" }
+        { cache: "no-store", credentials: "include" }
       );
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
       setComments(Array.isArray(json?.comments) ? json.comments : []);
+      setLoadedOnce(true);
     } catch (e: any) {
       setErrorMsg(e?.message || "Failed to load comments");
     } finally {
@@ -49,10 +49,12 @@ export default function CommentsThread({ postId }: { postId: string }) {
 
   async function submitTopLevel(text: string) {
     setErrorMsg(null);
+
     const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: text }),
+      credentials: "include",
     });
 
     const json = await res.json().catch(() => null);
@@ -63,30 +65,28 @@ export default function CommentsThread({ postId }: { postId: string }) {
     }
 
     const created = json?.comment;
-    if (created?.id) {
-      setComments((prev) => [...prev, created]);
-      setShowComments(true); // after posting, show list
-    } else {
-      await loadComments();
-      setShowComments(true);
-    }
+    if (created?.id) setComments((prev) => [...prev, created]);
+    else await loadComments();
+
+    setShowComments(true);
+    setLoadedOnce(true);
   }
 
-  // When composer is opened, ensure we have comments loaded (so dropdown works)
+  // optional: pre-load once when composer opens (so "View comments" is instant)
   useEffect(() => {
-    if (showComposer && !commentsLoaded) loadComments();
+    if (showComposer && !loadedOnce) loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showComposer]);
 
   return (
     <div className="mt-3 border-t border-[#E6EEE9] pt-2">
-      {/* Action row like LinkedIn */}
+      {/* LinkedIn-style actions */}
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => {
-            setShowComposer(true);     // immediately open composer
-            setShowComments(false);    // keep list hidden until user opens it
+            setShowComposer(true);   // 1 click to comment
+            setShowComments(false);  // list stays hidden unless user opens it
           }}
           className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-white/60"
         >
@@ -98,10 +98,8 @@ export default function CommentsThread({ postId }: { postId: string }) {
           onClick={() => {
             const next = !showComments;
             setShowComments(next);
-            if (next) {
-              setShowComposer(true); // keep composer visible
-              loadComments();
-            }
+            setShowComposer(true); // keep input visible
+            if (next) loadComments();
           }}
           className="text-sm text-[#4B5B55] hover:underline"
         >
