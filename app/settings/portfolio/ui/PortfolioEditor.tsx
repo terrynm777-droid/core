@@ -16,7 +16,6 @@ type Holding = {
 };
 
 const CURRENCIES = ["USD","JPY","AUD","HKD","EUR","GBP","CNY","CAD","CHF","SGD"];
-const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
 
 function clamp(n: number) {
   if (!isFinite(n)) return 0;
@@ -46,10 +45,7 @@ export default function PortfolioEditor() {
   const [live, setLive] = useState<any>(null);
   const [snapPoints, setSnapPoints] = useState<{ day: string; total_usd: number }[]>([]);
 
-  const totalAmount = useMemo(
-    () => holdings.reduce((a, h) => a + (Number(h.amount) || 0), 0),
-    [holdings]
-  );
+  const totalAmount = useMemo(() => holdings.reduce((a, h) => a + (Number(h.amount) || 0), 0), [holdings]);
 
   const pieStyle = useMemo(() => {
     if (totalAmount <= 0 || holdings.length === 0) {
@@ -57,30 +53,18 @@ export default function PortfolioEditor() {
     }
 
     let acc = 0;
+    const palette = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
+
     const segs: string[] = [];
     holdings.forEach((h, i) => {
       const w = (h.amount / totalAmount) * 100;
       const start = acc;
       const end = acc + w;
       acc = end;
-      segs.push(`${PALETTE[i % PALETTE.length]} ${start}% ${end}%`);
+      segs.push(`${palette[i % palette.length]} ${start}% ${end}%`);
     });
 
     return { backgroundImage: `conic-gradient(${segs.join(",")})` } as any;
-  }, [holdings, totalAmount]);
-
-  const pieLegend = useMemo(() => {
-    if (totalAmount <= 0 || holdings.length === 0) return [];
-    return holdings.map((h, i) => {
-      const pct = (h.amount / totalAmount) * 100;
-      return {
-        key: `${h.symbol}-${h.currency}-${i}`,
-        color: PALETTE[i % PALETTE.length],
-        label: `${h.symbol} (${h.currency})`,
-        pct,
-        amount: h.amount,
-      };
-    });
   }, [holdings, totalAmount]);
 
   async function load() {
@@ -90,7 +74,7 @@ export default function PortfolioEditor() {
     try {
       const res = await fetch("/api/portfolio", { cache: "no-store" });
       const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(`${res.status} ${json?.error || "Failed to load portfolio"}`);
+      if (!res.ok) throw new Error(json?.error || "Failed to load portfolio");
 
       setName(json?.portfolio?.name ?? "My Portfolio");
       setIsPublic(Boolean(json?.portfolio?.is_public));
@@ -120,16 +104,12 @@ export default function PortfolioEditor() {
   }
 
   async function refreshSnapshots() {
-    // Create/refresh today's snapshot
+    // Upsert today's snapshot (temporary “no cron” solution)
     await fetch("/api/portfolio/snapshot", { method: "POST" });
 
-    // Load daily points
     const res = await fetch("/api/portfolio/snapshot", { cache: "no-store" });
     const json = await res.json().catch(() => null);
-    if (res.ok) {
-      const pts = Array.isArray(json?.points) ? json.points : [];
-      setSnapPoints(pts.map((p: any) => ({ day: String(p.day), total_usd: Number(p.total_usd ?? 0) })));
-    }
+    if (res.ok) setSnapPoints((json?.points ?? []).map((p: any) => ({ day: p.day, total_usd: Number(p.total_usd ?? 0) })));
   }
 
   useEffect(() => {
@@ -165,6 +145,7 @@ export default function PortfolioEditor() {
 
     const sym = pick.symbol.toUpperCase();
     setHoldings((prev) => {
+      // merge if same symbol+currency already exists
       const idx = prev.findIndex((h) => h.symbol === sym && h.currency === currency);
       if (idx >= 0) {
         const copy = [...prev];
@@ -197,7 +178,7 @@ export default function PortfolioEditor() {
         body: JSON.stringify({ name, is_public: isPublic }),
       });
       const metaJson = await metaRes.json().catch(() => null);
-      if (!metaRes.ok) throw new Error(`${metaRes.status} ${metaJson?.error || "Failed to save settings"}`);
+      if (!metaRes.ok) throw new Error(metaJson?.error || "Failed to save settings");
 
       // save holdings replace-all
       const putRes = await fetch("/api/portfolio", {
@@ -206,7 +187,7 @@ export default function PortfolioEditor() {
         body: JSON.stringify({ holdings }),
       });
       const putJson = await putRes.json().catch(() => null);
-      if (!putRes.ok) throw new Error(`${putRes.status} ${putJson?.error || "Failed to save holdings"}`);
+      if (!putRes.ok) throw new Error(putJson?.error || "Failed to save holdings");
 
       setOk("Saved.");
       await refreshLive();
@@ -227,7 +208,9 @@ export default function PortfolioEditor() {
         <div className="h-24 w-24 rounded-full border border-[#D7E4DD]" style={pieStyle} />
         <div className="flex-1">
           <div className="text-sm font-semibold">Portfolio</div>
-          <div className="text-sm text-[#6B7A74]">Total allocation: {totalAmount.toFixed(2)}</div>
+          <div className="text-sm text-[#6B7A74]">
+            Total allocation: {totalAmount.toFixed(2)}
+          </div>
 
           {live ? (
             <div className="mt-1 text-sm">
@@ -240,32 +223,15 @@ export default function PortfolioEditor() {
         </div>
       </div>
 
-      {/* Legend for pie (names + colors) */}
-      {pieLegend.length > 0 ? (
-        <div className="grid grid-cols-1 gap-2">
-          {pieLegend.map((it) => (
-            <div key={it.key} className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: it.color }} />
-                <span className="font-mono">{it.label}</span>
-              </div>
-              <div className="text-[#6B7A74]">
-                {it.pct.toFixed(1)}% • {it.amount.toFixed(2)}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {/* Daily performance bars */}
+      {/* Daily performance bars (simple) */}
       <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4">
-        <div className="text-sm font-semibold">Last 30 days (daily)</div>
+        <div className="text-sm font-semibold">Last 30 days (snapshot)</div>
         <div className="mt-3 flex items-end gap-1 h-24">
           {snapPoints.length === 0 ? (
             <div className="text-xs text-[#6B7A74]">No history yet.</div>
           ) : (
             (() => {
-              const max = Math.max(...snapPoints.map((p) => p.total_usd), 1);
+              const max = Math.max(...snapPoints.map(p => p.total_usd), 1);
               return snapPoints.map((p, i) => (
                 <div
                   key={p.day + i}
@@ -278,7 +244,7 @@ export default function PortfolioEditor() {
           )}
         </div>
         <div className="mt-2 text-xs text-[#6B7A74]">
-          (This tracks your allocation total unless you add real pricing + FX conversion.)
+          (This will become accurate once you add FX conversion + shares. Right now it tracks your allocation total.)
         </div>
       </div>
 
@@ -295,13 +261,11 @@ export default function PortfolioEditor() {
       <div className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-4 py-3">
         <div>
           <div className="text-sm font-semibold">Public portfolio</div>
-          <div className="text-xs text-[#6B7A74]">
-            {isPublic ? "Anyone with the link can view it." : "Only you can view it."}
-          </div>
+          <div className="text-xs text-[#6B7A74]">If off, only you can view it.</div>
         </div>
         <button
           type="button"
-          onClick={() => setIsPublic((v) => !v)}
+          onClick={() => setIsPublic(v => !v)}
           className={`rounded-2xl px-4 py-2 text-sm font-medium ${
             isPublic ? "bg-[#22C55E] text-white" : "border border-[#D7E4DD] bg-white"
           }`}
@@ -310,7 +274,7 @@ export default function PortfolioEditor() {
         </button>
       </div>
 
-      {/* Create portfolio flow */}
+      {/* Create portfolio flow: search -> pick -> amount + currency -> add */}
       <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 space-y-3">
         <div className="text-sm font-semibold">Add holding</div>
 
@@ -327,11 +291,7 @@ export default function PortfolioEditor() {
               <button
                 key={`${r.symbol}-${r.type}`}
                 type="button"
-                onClick={() => {
-                  setPick(r);
-                  setResults([]);
-                  setQ(`${r.symbol} — ${r.name}`);
-                }}
+                onClick={() => { setPick(r); setResults([]); setQ(`${r.symbol} — ${r.name}`); }}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-[#F7FAF8]"
               >
                 <span className="font-mono">{r.symbol}</span>{" "}
@@ -354,9 +314,7 @@ export default function PortfolioEditor() {
             onChange={(e) => setCurrency(e.target.value)}
             className="col-span-3 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <button
             type="button"
@@ -375,14 +333,10 @@ export default function PortfolioEditor() {
           <div className="text-sm text-[#6B7A74]">No holdings yet.</div>
         ) : (
           holdings.map((h, i) => (
-            <div
-              key={`${h.symbol}-${h.currency}-${i}`}
-              className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3"
-            >
+            <div key={`${h.symbol}-${h.currency}-${i}`} className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3">
               <div>
                 <div className="text-sm font-medium">
-                  <span className="font-mono">{h.symbol}</span>{" "}
-                  <span className="text-[#6B7A74]">({h.currency})</span>
+                  <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
                 </div>
                 <div className="text-xs text-[#6B7A74]">{h.amount.toFixed(2)}</div>
               </div>
