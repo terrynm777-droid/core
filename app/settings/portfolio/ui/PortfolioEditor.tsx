@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getUsdBaseRates } from "@/lib/fx";
 
-type SymbolResult = {
-  symbol: string;
-  name: string;
-  type: string;
-};
+type SymbolResult = { symbol: string; name: string; type: string };
 
 type Holding = {
   symbol: string;
@@ -15,7 +13,11 @@ type Holding = {
   currency: string;
 };
 
-const CURRENCIES = ["USD","JPY","AUD","HKD","EUR","GBP","CNY","CAD","CHF","SGD"];
+type HoldingWithUsd = Holding & { usdAmount: number };
+type SnapPoint = { day: string; total_usd: number };
+
+const CURRENCIES = ["USD", "JPY", "AUD", "HKD", "EUR", "GBP", "CNY", "CAD", "CHF", "SGD"];
+const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
 
 function clamp(n: number) {
   if (!isFinite(n)) return 0;
@@ -23,15 +25,85 @@ function clamp(n: number) {
   return n;
 }
 
+function toUsdPerUnit(currency: string, raw: number) {
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  const c = currency.toUpperCase();
+  if (c === "USD") return 1;
+  if (raw > 5) return 1 / raw; // JPY-style quote
+  return raw; // already USD per unit
+}
+
+function normalizeRates(fx: any): Record<string, number> {
+  if (!fx) return { USD: 1 };
+  if (fx.rates && typeof fx.rates === "object") return { USD: 1, ...fx.rates };
+  if (typeof fx === "object") return { USD: 1, ...fx };
+  return { USD: 1 };
+}
+
+function unixToDay(t: number) {
+  return new Date(t * 1000).toISOString().slice(0, 10);
+}
+
+// IMPORTANT: keep NaN as NaN so missing data doesn't become "-100%"
+function normalizeToPct(series: number[]) {
+  const firstIdx = series.findIndex((v) => Number.isFinite(v) && v > 0);
+  if (firstIdx < 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
+  const base = series[firstIdx];
+  if (!Number.isFinite(base) || base <= 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
+  return series.map((v) => {
+    if (!Number.isFinite(v)) return NaN;
+    return ((Number(v) - base) / base) * 100;
+  });
+}
+
+function clampIdx(i: number, n: number) {
+  if (n <= 0) return 0;
+  return Math.max(0, Math.min(n - 1, i));
+}
+
+function fmtMoney(x: number) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtPct(x: number) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toFixed(2)}%`;
+}
+
+function shortDay(day: string) {
+  if (!day || day.length < 10) return day;
+  return `${day.slice(5, 7)}/${day.slice(8, 10)}`;
+}
+
+async function fetchJsonOrThrow(res: Response) {
+  const text = await res.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {}
+  if (!res.ok) {
+    const rawMsg = json?.error || text || res.statusText || "Request failed";
+    const msg = String(rawMsg).replace(/^\s*\d+\s*/, "").trim();
+    throw new Error(`${res.status} ${msg}`.trim());
+  }
+  return json;
+}
+
 export default function PortfolioEditor() {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState("My Portfolio");
   const [isPublic, setIsPublic] = useState(false);
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
 
-  // add flow
+  // add holding flow
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolResult[]>([]);
   const [pick, setPick] = useState<SymbolResult | null>(null);
@@ -41,52 +113,107 @@ export default function PortfolioEditor() {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // live value
+  // live + snapshots
   const [live, setLive] = useState<any>(null);
-  const [snapPoints, setSnapPoints] = useState<{ day: string; total_usd: number }[]>([]);
+  const [snapPoints, setSnapPoints] = useState<SnapPoint[]>([]);
 
-  const totalAmount = useMemo(() => holdings.reduce((a, h) => a + (Number(h.amount) || 0), 0), [holdings]);
+  // chart controls (line only)
+  const [resolution, setResolution] = useState<"1D" | "1W" | "1M" | "3M" | "1Y" | "ALL">("1M");
+  const [normalizeMode, setNormalizeMode] = useState<"pct" | "price">("pct");
+
+  const holdingsWithUsd: HoldingWithUsd[] = useMemo(() => {
+    return holdings.map((h) => {
+      const raw = Number(rates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
+      const usdPerUnit = toUsdPerUnit(h.currency, raw);
+      const usdAmount = usdPerUnit > 0 ? h.amount * usdPerUnit : 0;
+      return { ...h, usdAmount };
+    });
+  }, [holdings, rates]);
+
+  const totalAmountUsd = useMemo(
+    () => holdingsWithUsd.reduce((a, h) => a + (h.usdAmount || 0), 0),
+    [holdingsWithUsd]
+  );
 
   const pieStyle = useMemo(() => {
-    if (totalAmount <= 0 || holdings.length === 0) {
+    if (totalAmountUsd <= 0 || holdingsWithUsd.length === 0) {
       return { backgroundImage: "conic-gradient(#D7E4DD 0 100%)" } as any;
     }
 
     let acc = 0;
-    const palette = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
-
     const segs: string[] = [];
-    holdings.forEach((h, i) => {
-      const w = (h.amount / totalAmount) * 100;
+    holdingsWithUsd.forEach((h, i) => {
+      const w = (h.usdAmount / totalAmountUsd) * 100;
       const start = acc;
       const end = acc + w;
       acc = end;
-      segs.push(`${palette[i % palette.length]} ${start}% ${end}%`);
+      segs.push(`${PALETTE[i % PALETTE.length]} ${start}% ${end}%`);
     });
 
     return { backgroundImage: `conic-gradient(${segs.join(",")})` } as any;
-  }, [holdings, totalAmount]);
+  }, [holdingsWithUsd, totalAmountUsd]);
+
+  const pieLegend = useMemo(() => {
+    if (totalAmountUsd <= 0 || holdingsWithUsd.length === 0) return [];
+    return holdingsWithUsd.map((h, i) => {
+      const pct = (h.usdAmount / totalAmountUsd) * 100;
+      return {
+        key: `${h.symbol}-${h.currency}-${i}`,
+        color: PALETTE[i % PALETTE.length],
+        label: `${h.symbol} (${h.currency})`,
+        pct,
+        amount: h.amount,
+      };
+    });
+  }, [holdingsWithUsd, totalAmountUsd]);
+
+  async function refreshLive() {
+    const res = await fetch("/api/portfolio/value", { cache: "no-store" });
+    const json = await fetchJsonOrThrow(res);
+    setLive(json);
+  }
+
+  async function refreshSnapshots() {
+    await fetch("/api/portfolio/snapshot", { method: "POST" });
+    const res = await fetch("/api/portfolio/snapshot", { cache: "no-store" });
+    const json = await fetchJsonOrThrow(res);
+
+    const pts = Array.isArray(json?.points) ? json.points : [];
+    setSnapPoints(
+      pts.map((p: any) => ({
+        day: String(p.day),
+        total_usd: Number(p.total_usd ?? 0),
+      }))
+    );
+  }
 
   async function load() {
     setErr(null);
     setOk(null);
     setLoading(true);
+
     try {
       const res = await fetch("/api/portfolio", { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Failed to load portfolio");
+      const json = await fetchJsonOrThrow(res);
 
       setName(json?.portfolio?.name ?? "My Portfolio");
       setIsPublic(Boolean(json?.portfolio?.is_public));
 
       const rows = Array.isArray(json?.holdings) ? json.holdings : [];
-      setHoldings(
-        rows.map((r: any) => ({
+      const nextHoldings = rows
+        .map((r: any) => ({
           symbol: String(r.symbol ?? "").toUpperCase(),
           amount: Number(r.amount ?? 0),
           currency: String(r.currency ?? "USD").toUpperCase(),
-        })).filter((h: Holding) => h.symbol && h.amount > 0)
-      );
+        }))
+        .filter((h: Holding) => h.symbol && h.amount > 0);
+
+      setHoldings(nextHoldings);
+
+      try {
+        const fx = await getUsdBaseRates(CURRENCIES);
+        setRates(normalizeRates(fx));
+      } catch {}
 
       await refreshLive();
       await refreshSnapshots();
@@ -97,23 +224,9 @@ export default function PortfolioEditor() {
     }
   }
 
-  async function refreshLive() {
-    const res = await fetch("/api/portfolio/value", { cache: "no-store" });
-    const json = await res.json().catch(() => null);
-    if (res.ok) setLive(json);
-  }
-
-  async function refreshSnapshots() {
-    // Upsert today's snapshot (temporary “no cron” solution)
-    await fetch("/api/portfolio/snapshot", { method: "POST" });
-
-    const res = await fetch("/api/portfolio/snapshot", { cache: "no-store" });
-    const json = await res.json().catch(() => null);
-    if (res.ok) setSnapPoints((json?.points ?? []).map((p: any) => ({ day: p.day, total_usd: Number(p.total_usd ?? 0) })));
-  }
-
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function searchSymbols(text: string) {
@@ -125,8 +238,8 @@ export default function PortfolioEditor() {
       return;
     }
     const res = await fetch(`/api/symbols?q=${encodeURIComponent(t)}`, { cache: "no-store" });
-    const json = await res.json().catch(() => null);
-    if (res.ok) setResults(Array.isArray(json?.results) ? json.results : []);
+    const json = await fetchJsonOrThrow(res);
+    setResults(Array.isArray(json?.results) ? json.results : []);
   }
 
   function addHolding() {
@@ -144,15 +257,16 @@ export default function PortfolioEditor() {
     }
 
     const sym = pick.symbol.toUpperCase();
+    const cur = currency.toUpperCase();
+
     setHoldings((prev) => {
-      // merge if same symbol+currency already exists
-      const idx = prev.findIndex((h) => h.symbol === sym && h.currency === currency);
+      const idx = prev.findIndex((h) => h.symbol === sym && h.currency === cur);
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = { ...copy[idx], amount: copy[idx].amount + amt };
         return copy;
       }
-      return [...prev, { symbol: sym, name: pick.name, amount: amt, currency }];
+      return [...prev, { symbol: sym, name: pick.name, amount: amt, currency: cur }];
     });
 
     setPick(null);
@@ -171,33 +285,57 @@ export default function PortfolioEditor() {
     setSaving(true);
 
     try {
-      // save meta
       const metaRes = await fetch("/api/portfolio", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, is_public: isPublic }),
       });
-      const metaJson = await metaRes.json().catch(() => null);
-      if (!metaRes.ok) throw new Error(metaJson?.error || "Failed to save settings");
+      await fetchJsonOrThrow(metaRes);
 
-      // save holdings replace-all
       const putRes = await fetch("/api/portfolio", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ holdings }),
       });
-      const putJson = await putRes.json().catch(() => null);
-      if (!putRes.ok) throw new Error(putJson?.error || "Failed to save holdings");
+      await fetchJsonOrThrow(putRes);
 
       setOk("Saved.");
       await refreshLive();
       await refreshSnapshots();
+      router.push("/feed");
     } catch (e: any) {
       setErr(e?.message || "Save failed");
     } finally {
       setSaving(false);
     }
   }
+
+  // filter portfolio points based on resolution
+  const viewSnapPoints = useMemo(() => {
+    if (!snapPoints.length) return [];
+    if (resolution === "ALL") return snapPoints;
+
+    const now = new Date();
+    const daysBack =
+      resolution === "1D" ? 5 :
+      resolution === "1W" ? 28 :
+      resolution === "1M" ? 90 :
+      resolution === "3M" ? 180 :
+      resolution === "1Y" ? 365 : 3650;
+
+    const cutoff = new Date(now.getTime() - daysBack * 86400_000);
+
+    return snapPoints.filter((p) => {
+      const d = new Date(p.day + "T00:00:00Z");
+      return d >= cutoff;
+    });
+  }, [snapPoints, resolution]);
+
+  const portfolioRaw = useMemo(() => viewSnapPoints.map((p) => Number(p.total_usd ?? 0)), [viewSnapPoints]);
+  const portfolioPct = useMemo(() => normalizeToPct(portfolioRaw), [portfolioRaw]);
+  const portfolioDays = useMemo(() => viewSnapPoints.map((p) => p.day), [viewSnapPoints]);
+
+  const portfolioY = normalizeMode === "pct" ? portfolioPct : portfolioRaw;
 
   if (loading) return <div className="text-sm text-[#6B7A74]">Loading…</div>;
 
@@ -208,10 +346,7 @@ export default function PortfolioEditor() {
         <div className="h-24 w-24 rounded-full border border-[#D7E4DD]" style={pieStyle} />
         <div className="flex-1">
           <div className="text-sm font-semibold">Portfolio</div>
-          <div className="text-sm text-[#6B7A74]">
-            Total allocation: {totalAmount.toFixed(2)}
-          </div>
-
+          <div className="text-sm text-[#6B7A74]">Total allocation: ${fmtMoney(totalAmountUsd)}</div>
           {live ? (
             <div className="mt-1 text-sm">
               Today:{" "}
@@ -223,28 +358,83 @@ export default function PortfolioEditor() {
         </div>
       </div>
 
-      {/* Daily performance bars (simple) */}
+      {/* Legend for pie */}
+      {pieLegend.length > 0 ? (
+        <div className="grid grid-cols-1 gap-2">
+          {pieLegend.map((it) => (
+            <div key={it.key} className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: it.color }} />
+                <span className="font-mono">{it.label}</span>
+              </div>
+              <div className="text-[#6B7A74]">
+                {it.pct.toFixed(1)}% • {it.amount.toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Performance */}
       <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4">
-        <div className="text-sm font-semibold">Last 30 days (snapshot)</div>
-        <div className="mt-3 flex items-end gap-1 h-24">
-          {snapPoints.length === 0 ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold">Performance</div>
+          <div className="text-xs text-[#6B7A74]">Line</div>
+        </div>
+
+        {/* controls */}
+        <div className="mt-3 grid grid-cols-12 gap-2">
+          <select
+            value={resolution}
+            onChange={(e) => setResolution(e.target.value as any)}
+            className="col-span-4 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          >
+            <option value="1D">1D</option>
+            <option value="1W">1W</option>
+            <option value="1M">1M</option>
+            <option value="3M">3M</option>
+            <option value="1Y">1Y</option>
+            <option value="ALL">ALL</option>
+          </select>
+
+          <select
+            value={normalizeMode}
+            onChange={(e) => setNormalizeMode(e.target.value as any)}
+            className="col-span-4 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          >
+            <option value="pct">% Change</option>
+            <option value="price">Price</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                setErr(null);
+                await refreshLive();
+                await refreshSnapshots();
+              } catch (e: any) {
+                setErr(e?.message || "Refresh failed");
+              }
+            }}
+            className="col-span-4 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm hover:shadow-sm"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {/* chart */}
+        <div className="mt-3 relative z-0">
+          {viewSnapPoints.length === 0 ? (
             <div className="text-xs text-[#6B7A74]">No history yet.</div>
           ) : (
-            (() => {
-              const max = Math.max(...snapPoints.map(p => p.total_usd), 1);
-              return snapPoints.map((p, i) => (
-                <div
-                  key={p.day + i}
-                  title={`${p.day}: ${p.total_usd.toFixed(2)}`}
-                  className="flex-1 rounded-sm bg-[#D7E4DD]"
-                  style={{ height: `${(p.total_usd / max) * 100}%` }}
-                />
-              ));
-            })()
+            <ChartSvg
+              days={portfolioDays}
+              portfolioRaw={portfolioRaw}
+              portfolioY={portfolioY}
+              normalizeMode={normalizeMode}
+            />
           )}
-        </div>
-        <div className="mt-2 text-xs text-[#6B7A74]">
-          (This will become accurate once you add FX conversion + shares. Right now it tracks your allocation total.)
         </div>
       </div>
 
@@ -261,11 +451,13 @@ export default function PortfolioEditor() {
       <div className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-4 py-3">
         <div>
           <div className="text-sm font-semibold">Public portfolio</div>
-          <div className="text-xs text-[#6B7A74]">If off, only you can view it.</div>
+          <div className="text-xs text-[#6B7A74]">
+            {isPublic ? "Anyone with the link can view it." : "Only you can view it."}
+          </div>
         </div>
         <button
           type="button"
-          onClick={() => setIsPublic(v => !v)}
+          onClick={() => setIsPublic((v) => !v)}
           className={`rounded-2xl px-4 py-2 text-sm font-medium ${
             isPublic ? "bg-[#22C55E] text-white" : "border border-[#D7E4DD] bg-white"
           }`}
@@ -274,7 +466,7 @@ export default function PortfolioEditor() {
         </button>
       </div>
 
-      {/* Create portfolio flow: search -> pick -> amount + currency -> add */}
+      {/* Add holding */}
       <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 space-y-3">
         <div className="text-sm font-semibold">Add holding</div>
 
@@ -291,11 +483,16 @@ export default function PortfolioEditor() {
               <button
                 key={`${r.symbol}-${r.type}`}
                 type="button"
-                onClick={() => { setPick(r); setResults([]); setQ(`${r.symbol} — ${r.name}`); }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setPick(r);
+                  setResults([]);
+                  setQ(`${r.symbol} — ${r.name}`);
+                }}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-[#F7FAF8]"
               >
-                <span className="font-mono">{r.symbol}</span>{" "}
-                <span className="text-[#6B7A74]">— {r.name}</span>
+                <span className="font-mono">{r.symbol}</span> <span className="text-[#6B7A74]">— {r.name}</span>
               </button>
             ))}
           </div>
@@ -314,7 +511,11 @@ export default function PortfolioEditor() {
             onChange={(e) => setCurrency(e.target.value)}
             className="col-span-3 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           >
-            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
           </select>
           <button
             type="button"
@@ -333,12 +534,15 @@ export default function PortfolioEditor() {
           <div className="text-sm text-[#6B7A74]">No holdings yet.</div>
         ) : (
           holdings.map((h, i) => (
-            <div key={`${h.symbol}-${h.currency}-${i}`} className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3">
+            <div
+              key={`${h.symbol}-${h.currency}-${i}`}
+              className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3"
+            >
               <div>
                 <div className="text-sm font-medium">
                   <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
                 </div>
-                <div className="text-xs text-[#6B7A74]">{h.amount.toFixed(2)}</div>
+                <div className="text-xs text-[#6B7A74]">{h.amount.toLocaleString()}</div>
               </div>
               <button
                 type="button"
@@ -362,6 +566,163 @@ export default function PortfolioEditor() {
       >
         {saving ? "Saving…" : "Save portfolio"}
       </button>
+    </div>
+  );
+}
+
+function ChartSvg(props: {
+  days: string[];
+  portfolioRaw: number[];
+  portfolioY: number[];
+  normalizeMode: "pct" | "price";
+}) {
+  const W = 720;
+  const H = 260;
+  const PAD_L = 14;
+  const PAD_R = 54;
+  const PAD_T = 12;
+  const PAD_B = 38;
+
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const lineLen = props.days.length;
+  const n = Math.max(lineLen, 1);
+
+  const xAt = (i: number) => {
+    if (n <= 1) return PAD_L;
+    return PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R);
+  };
+
+  const allVals = useMemo(() => {
+    const all = props.portfolioY.flat().filter((v) => Number.isFinite(v));
+    return all.length ? all : [0, 1];
+  }, [props.portfolioY]);
+
+  const minY = Math.min(...allVals);
+  const maxY = Math.max(...allVals);
+  const span = maxY - minY || 1;
+
+  const yAt = (v: number) => {
+    const vv = Number.isFinite(v) ? Number(v) : 0;
+    return PAD_T + (1 - (vv - minY) / span) * (H - PAD_T - PAD_B);
+  };
+
+  const niceTicks = (min: number, max: number, count: number) => {
+    const sp = max - min || 1;
+    const rawStep = sp / Math.max(1, count - 1);
+    const pow = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const steps = [1, 2, 5, 10].map((m) => m * pow);
+    const step = steps.reduce((best, s) => (Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best), steps[0]);
+    const start = Math.floor(min / step) * step;
+    const end = Math.ceil(max / step) * step;
+    const out: number[] = [];
+    for (let v = start; v <= end + 1e-9; v += step) out.push(v);
+    return out;
+  };
+
+  const yTicks = useMemo(() => niceTicks(minY, maxY, 5), [minY, maxY]);
+
+  const xTickIdxs = useMemo(() => {
+    const len = lineLen;
+    if (len <= 1) return [0];
+    const target = 4;
+    const step = Math.max(1, Math.floor((len - 1) / (target - 1)));
+    const idxs: number[] = [];
+    for (let i = 0; i < len; i += step) idxs.push(i);
+    if (idxs[idxs.length - 1] !== len - 1) idxs.push(len - 1);
+    return idxs;
+  }, [lineLen]);
+
+  const rightLabel = (v: number) => (props.normalizeMode === "pct" ? fmtPct(v) : fmtMoney(v));
+
+  const pathFor = (y: number[]) => {
+    if (!y.length) return "";
+    let d = "";
+    let started = false;
+
+    for (let i = 0; i < y.length; i++) {
+      const v = y[i];
+      if (!Number.isFinite(v)) {
+        started = false;
+        continue;
+      }
+      const x = xAt(i);
+      const yy = yAt(v);
+      if (!started) {
+        d += `M ${x} ${yy}`;
+        started = true;
+      } else {
+        d += ` L ${x} ${yy}`;
+      }
+    }
+    return d;
+  };
+
+  const hoverDay = useMemo(() => {
+    if (hoverIdx == null) return "";
+    return props.days[clampIdx(hoverIdx, props.days.length)] ?? "";
+  }, [hoverIdx, props.days]);
+
+  const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : 0;
+  const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : 0;
+
+  const onMove = (e: React.MouseEvent) => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const plotW = r.width;
+    if (plotW <= 0) return;
+    const t = (x / plotW) * (n - 1);
+    const idx = clampIdx(Math.round(t), n);
+    setHoverIdx(idx);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative" onMouseMove={onMove} onMouseLeave={() => setHoverIdx(null)}>
+      {hoverIdx != null ? (
+        <div className="pointer-events-none absolute left-3 top-2 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-xs shadow-sm">
+          <div className="font-medium">{hoverDay}</div>
+          <div className="text-[#6B7A74]">
+            {props.normalizeMode === "pct" ? `Change: ${fmtPct(hoverY)}` : `Value: $${fmtMoney(hoverY)}`}
+          </div>
+          <div className="text-[#6B7A74]">Total: ${fmtMoney(hoverRaw)}</div>
+        </div>
+      ) : null}
+
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-64 select-none">
+        {yTicks.map((v, i) => {
+          const y = yAt(v);
+          return (
+            <g key={`yt-${i}`}>
+              <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y} stroke="#D7E4DD" strokeWidth="1" />
+              <text x={W - PAD_R + 6} y={y + 3} fontSize="10" fill="#6B7A74">
+                {rightLabel(v)}
+              </text>
+            </g>
+          );
+        })}
+
+        {xTickIdxs.map((i) => {
+          const x = xAt(i);
+          const label = shortDay(props.days[clampIdx(i, props.days.length)] || "");
+          return (
+            <g key={`xt-${i}`}>
+              <line x1={x} y1={H - PAD_B} x2={x} y2={H - PAD_B + 4} stroke="#D7E4DD" strokeWidth="1" />
+              <text x={x} y={H - 10} fontSize="10" fill="#6B7A74" textAnchor="middle">
+                {label}
+              </text>
+            </g>
+          );
+        })}
+
+        <path d={pathFor(props.portfolioY)} fill="none" stroke="#0B0F0E" strokeWidth="2" />
+
+        {hoverIdx != null ? (
+          <line x1={xAt(hoverIdx)} y1={PAD_T} x2={xAt(hoverIdx)} y2={H - PAD_B} stroke="#9CA3AF" strokeWidth="1" />
+        ) : null}
+      </svg>
     </div>
   );
 }

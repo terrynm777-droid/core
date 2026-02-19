@@ -1,19 +1,41 @@
+// app/api/portfolio/snapshot/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getUsdBaseRates } from "@/lib/fx";
 
 export const runtime = "nodejs";
 
 type SnapshotRow = {
   id: string;
-  created_at: string;
   user_id: string;
-  total_value: number | null;
-  currency: string | null;
+  day: string; // date
+  total_usd: number | null;
+  created_at: string;
 };
 
-// UTC day key: YYYY-MM-DD
-function dayKey(d: Date) {
+function dayKeyUTC(d: Date) {
+  // YYYY-MM-DD in UTC
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Normalize FX output to "USD per 1 unit of currency".
+ * Handles either style:
+ * - 1 USD = X JPY  -> USD per JPY = 1/X
+ * - 1 JPY = X USD  -> USD per JPY = X
+ */
+function toUsdPerUnit(currency: string, raw: number) {
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  const c = currency.toUpperCase();
+  if (c === "USD") return 1;
+
+  // Heuristic:
+  // If raw is big (e.g., JPY ~ 140-200), it's almost certainly "currency per USD".
+  // Then invert to get "USD per currency".
+  if (raw > 5) return 1 / raw;
+
+  // Otherwise assume it's already "USD per currency".
+  return raw;
 }
 
 export async function GET() {
@@ -21,21 +43,21 @@ export async function GET() {
   const { data: { user }, error: userErr } = await supabase.auth.getUser();
   if (userErr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  // Pull enough rows to cover last 30 days (some days may have multiple rows)
+  // pull last ~60 days to be safe
   const { data, error } = await supabase
     .from("portfolio_snapshots")
-    .select("id, created_at, user_id, total_value, currency")
+    .select("id, user_id, day, total_usd, created_at")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
+    .order("day", { ascending: false })
+    .limit(60);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Collapse to one point per day (latest snapshot that day)
+  // Map day -> value
   const byDay = new Map<string, number>();
-  for (const r of (data ?? []) as SnapshotRow[]) {
-    const k = String(r.created_at).slice(0, 10);
-    if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? 0));
+  for (const r of (data ?? []) as unknown as SnapshotRow[]) {
+    const k = String((r as any).day);
+    if (k && !byDay.has(k)) byDay.set(k, Number((r as any).total_usd ?? 0));
   }
 
   // Build last 30 days points (oldest -> newest)
@@ -43,7 +65,7 @@ export async function GET() {
   const points: { day: string; total_usd: number }[] = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
-    const k = dayKey(d);
+    const k = dayKeyUTC(d);
     points.push({ day: k, total_usd: byDay.get(k) ?? 0 });
   }
 
@@ -55,7 +77,7 @@ export async function POST() {
   const { data: { user }, error: userErr } = await supabase.auth.getUser();
   if (userErr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  // Compute "total_value" as sum of holding amounts (your app currently treats allocation as amount)
+  // get portfolio id
   const { data: portfolio, error: perr } = await supabase
     .from("portfolios")
     .select("id")
@@ -65,40 +87,44 @@ export async function POST() {
   if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
   if (!portfolio?.id) return NextResponse.json({ error: "Portfolio missing" }, { status: 500 });
 
+  // holdings
   const { data: holdings, error: herr } = await supabase
     .from("portfolio_holdings")
-    .select("amount")
+    .select("amount, currency")
     .eq("portfolio_id", portfolio.id);
 
   if (herr) return NextResponse.json({ error: herr.message }, { status: 500 });
 
-  const total = (holdings ?? []).reduce((acc: number, h: any) => acc + (Number(h.amount) || 0), 0);
+  const hs = (holdings ?? [])
+    .map((h: any) => ({
+      amount: Number(h.amount ?? 0),
+      currency: String(h.currency ?? "USD").toUpperCase(),
+    }))
+    .filter((h: any) => Number.isFinite(h.amount) && h.amount > 0);
 
-  // Enforce 1 snapshot per day: delete today's snapshot rows, then insert one
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+  // FX to USD for total_usd
+  const currencies = Array.from(new Set(hs.map((h: any) => h.currency)));
+  const fx = await getUsdBaseRates(currencies);
 
-  const del = await supabase
+  const total_usd = hs.reduce((acc: number, h: any) => {
+    const raw = Number((fx as any)?.rates?.[h.currency] ?? (h.currency === "USD" ? 1 : 0));
+    const usdPerUnit = toUsdPerUnit(h.currency, raw);
+    return acc + (usdPerUnit > 0 ? h.amount * usdPerUnit : 0);
+  }, 0);
+
+  const day = dayKeyUTC(new Date());
+
+  // IMPORTANT: requires UNIQUE(user_id, day) in Supabase
+  const { data: up, error: uperr } = await supabase
     .from("portfolio_snapshots")
-    .delete()
-    .eq("user_id", user.id)
-    .gte("created_at", start.toISOString())
-    .lt("created_at", end.toISOString());
-
-  if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 });
-
-  const ins = await supabase
-    .from("portfolio_snapshots")
-    .insert({
-      user_id: user.id,
-      total_value: total,
-      currency: "USD",
-    })
-    .select("id, created_at, user_id, total_value, currency")
+    .upsert(
+      { user_id: user.id, day, total_usd },
+      { onConflict: "user_id,day" }
+    )
+    .select("id, user_id, day, total_usd, created_at")
     .single();
 
-  if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 500 });
+  if (uperr) return NextResponse.json({ error: uperr.message }, { status: 500 });
 
-  return NextResponse.json({ snapshot: ins.data as SnapshotRow }, { status: 201 });
+  return NextResponse.json({ snapshot: up }, { status: 201 });
 }
