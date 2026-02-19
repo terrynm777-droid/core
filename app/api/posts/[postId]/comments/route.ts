@@ -13,43 +13,25 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-type Author = {
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
+type Profile = {
   id: string;
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
 };
 
-type CommentOut = {
+type CommentRow = {
   id: string;
   post_id: string;
   user_id: string;
   body: string;
   created_at: string;
   parent_comment_id: string | null;
-  author: Author;
 };
-
-function shapeComment(c: any): CommentOut {
-  return {
-    id: c.id,
-    post_id: c.post_id,
-    user_id: c.user_id,
-    body: c.body,
-    created_at: c.created_at,
-    parent_comment_id: c.parent_comment_id ?? null,
-    author: {
-      id: c.user_id,
-      username: c.profiles?.username ?? null,
-      display_name: c.profiles?.display_name ?? null,
-      avatar_url: c.profiles?.avatar_url ?? null,
-    },
-  };
-}
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders });
-}
 
 export async function GET(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
@@ -59,37 +41,60 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const limit = Math.min(Number(url.searchParams.get("limit") ?? "20"), 50);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? "0"), 0);
 
-  const { data, error } = await supabase
+  // 1) fetch comments
+  const { data: rows, error: rowsErr } = await supabase
     .from("post_comments")
-    .select(
-      `
-      id,
-      post_id,
-      user_id,
-      body,
-      created_at,
-      parent_comment_id,
-      profiles:profiles (
-        id,
-        username,
-        display_name,
-        avatar_url
-      )
-    `
-    )
+    .select("id, post_id, user_id, body, created_at, parent_comment_id")
     .eq("post_id", postId)
-    // return ALL comments; your UI can decide how to render replies if you want later
+    .is("parent_comment_id", null)
     .order("created_at", { ascending: true })
     .range(offset, offset + limit - 1);
 
-  if (error) {
+  if (rowsErr) {
     return NextResponse.json(
-      { error: error.message },
+      { error: rowsErr.message },
       { status: 500, headers: corsHeaders }
     );
   }
 
-  const comments = (data ?? []).map(shapeComment);
+  const commentsRaw = (rows ?? []) as CommentRow[];
+
+  // 2) fetch profiles for those user_ids
+  const userIds = Array.from(new Set(commentsRaw.map((c) => c.user_id))).filter(Boolean);
+
+  let profilesById = new Map<string, Profile>();
+  if (userIds.length) {
+    const { data: profs, error: profErr } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url")
+      .in("id", userIds);
+
+    if (profErr) {
+      return NextResponse.json(
+        { error: profErr.message },
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
+    (profs ?? []).forEach((p: any) => {
+      profilesById.set(p.id, {
+        id: p.id,
+        username: p.username ?? null,
+        display_name: p.display_name ?? null,
+        avatar_url: p.avatar_url ?? null,
+      });
+    });
+  }
+
+  const comments = commentsRaw.map((c) => ({
+    ...c,
+    author: profilesById.get(c.user_id) ?? {
+      id: c.user_id,
+      username: null,
+      display_name: null,
+      avatar_url: null,
+    },
+  }));
 
   return NextResponse.json(
     { comments, limit, offset },
@@ -131,7 +136,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     );
   }
 
-  const { data, error } = await supabase
+  // insert comment
+  const { data: inserted, error: insErr } = await supabase
     .from("post_comments")
     .insert({
       post_id: postId,
@@ -139,35 +145,41 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       body: text,
       parent_comment_id,
     })
-    .select(
-      `
-      id,
-      post_id,
-      user_id,
-      body,
-      created_at,
-      parent_comment_id,
-      profiles:profiles (
-        id,
-        username,
-        display_name,
-        avatar_url
-      )
-    `
-    )
+    .select("id, post_id, user_id, body, created_at, parent_comment_id")
     .single();
 
-  if (error) {
+  if (insErr) {
     return NextResponse.json(
-      { error: error.message },
+      { error: insErr.message },
       { status: 500, headers: corsHeaders }
     );
   }
 
-  const comment = shapeComment(data);
+  // fetch profile for response (optional but fixes @unknown instantly)
+  const { data: prof, error: profErr } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url")
+    .eq("id", user.id)
+    .maybeSingle();
 
-  return NextResponse.json(
-    { comment },
-    { status: 201, headers: corsHeaders }
-  );
+  if (profErr) {
+    return NextResponse.json(
+      { error: profErr.message },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+
+  const comment = {
+    ...(inserted as any),
+    author: prof
+      ? {
+          id: prof.id,
+          username: prof.username ?? null,
+          display_name: prof.display_name ?? null,
+          avatar_url: prof.avatar_url ?? null,
+        }
+      : { id: user.id, username: null, display_name: null, avatar_url: null },
+  };
+
+  return NextResponse.json({ comment }, { status: 201, headers: corsHeaders });
 }
