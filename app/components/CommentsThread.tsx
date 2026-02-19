@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReplyComposer from "@/app/components/ReplyComposer";
 
-type Author = { username: string | null; avatar_url: string | null } | null;
+type Author =
+  | {
+      id: string;
+      username: string | null;
+      display_name: string | null;
+      avatar_url: string | null;
+    }
+  | null;
 
 type Comment = {
   id: string;
@@ -15,17 +22,45 @@ type Comment = {
   author?: Author;
 };
 
-function AuthorLine({ author }: { author?: Author }) {
-  const u = author?.username ?? "unknown";
-  return <span className="font-medium">@{u}</span>;
+function Avatar({ url, label }: { url?: string | null; label: string }) {
+  const initial = (label.trim()[0] ?? "?").toUpperCase();
+
+  if (!url) {
+    return (
+      <div className="h-7 w-7 rounded-full bg-[#E6EFEA] text-[#4B5B55] flex items-center justify-center text-xs font-semibold">
+        {initial}
+      </div>
+    );
+  }
+
+  // eslint-disable-next-line @next/next/no-img-element
+  return (
+    <img
+      src={url}
+      alt={label}
+      className="h-7 w-7 rounded-full object-cover border border-[#D7E4DD]"
+      referrerPolicy="no-referrer"
+      onError={(e) => {
+        // If broken, fall back to initials block by hiding the image.
+        (e.currentTarget as HTMLImageElement).style.display = "none";
+      }}
+    />
+  );
 }
 
-/**
- * IMPORTANT:
- * - This component does NOT render a "Comment" button.
- * - Your FIRST comment button should live in PostActions (the one next to Like).
- * - When user clicks that first button, you should render this CommentsThread (or pass `open=true`).
- */
+function AuthorLine({ author }: { author?: Author }) {
+  const username = author?.username ?? "unknown";
+  const display = author?.display_name ?? null;
+  const label = display ? `${display} (@${username})` : `@${username}`;
+
+  return (
+    <div className="flex items-center gap-2">
+      <Avatar url={author?.avatar_url} label={username} />
+      <span className="font-medium">{label}</span>
+    </div>
+  );
+}
+
 export default function CommentsThread({
   postId,
   open = true,
@@ -33,12 +68,21 @@ export default function CommentsThread({
   postId: string;
   open?: boolean;
 }) {
-  const [showComposer, setShowComposer] = useState(open);
+  const [showComposer] = useState(open);
   const [showComments, setShowComments] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [total, setTotal] = useState(0);
+
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loadedOnce, setLoadedOnce] = useState(false);
+
+  const countLabel = useMemo(() => {
+    if (!loadedOnce) return "";
+    if (total <= 0) return "";
+    return `${total} comment(s)`;
+  }, [total, loadedOnce]);
 
   async function loadComments() {
     setLoading(true);
@@ -53,7 +97,12 @@ export default function CommentsThread({
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
 
-      setComments(Array.isArray(json?.comments) ? json.comments : []);
+      const list = Array.isArray(json?.comments) ? (json.comments as Comment[]) : [];
+      setComments(list);
+
+      // prefer server total if provided, else fallback to list length
+      setTotal(typeof json?.total === "number" ? json.total : list.length);
+
       setLoadedOnce(true);
     } catch (e: any) {
       setErrorMsg(e?.message || "Failed to load comments");
@@ -74,7 +123,6 @@ export default function CommentsThread({
       });
 
       const json = await res.json().catch(() => null);
-
       if (!res.ok) {
         setErrorMsg(json?.error || `HTTP ${res.status}`);
         return;
@@ -82,8 +130,12 @@ export default function CommentsThread({
 
       const created = json?.comment as Comment | undefined;
 
-      if (created?.id) setComments((prev) => [...prev, created]);
-      else await loadComments();
+      if (created?.id) {
+        setComments((prev) => [...prev, created]);
+        setTotal((t) => t + 1);
+      } else {
+        await loadComments();
+      }
 
       setShowComments(true);
       setLoadedOnce(true);
@@ -92,7 +144,7 @@ export default function CommentsThread({
     }
   }
 
-  // preload once when composer opens (so view comments is instant)
+  // preload once when composer opens (so “View comments” is instant)
   useEffect(() => {
     if (showComposer && !loadedOnce) loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,7 +169,7 @@ export default function CommentsThread({
           {showComments ? "Hide comments" : "View comments"}
         </button>
 
-        <div className="text-xs text-[#6B7A74]">{comments.length ? `${comments.length} comment(s)` : ""}</div>
+        <div className="text-xs text-[#6B7A74]">{countLabel}</div>
       </div>
 
       {errorMsg ? <div className="mt-2 text-xs text-red-600">{errorMsg}</div> : null}
@@ -135,7 +187,8 @@ export default function CommentsThread({
                   <AuthorLine author={c.author} />
                   <span>{new Date(c.created_at).toLocaleString()}</span>
                 </div>
-                <div className="mt-1 whitespace-pre-wrap text-sm">{c.body}</div>
+
+                <div className="mt-2 whitespace-pre-wrap text-sm">{c.body}</div>
               </div>
             ))
           )}
