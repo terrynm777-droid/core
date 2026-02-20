@@ -26,6 +26,7 @@ type MeProfile = {
 export default function FeedClient() {
   const [posts, setPosts] = useState<ApiPost[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [posting, setPosting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -37,6 +38,7 @@ export default function FeedClient() {
       const res = await fetch("/api/profile/me", { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok) return;
+
       setMe({
         id: json?.profile?.id ?? null,
         username: json?.profile?.username ?? null,
@@ -48,10 +50,12 @@ export default function FeedClient() {
   async function loadPosts() {
     setErr(null);
     setLoading(true);
+
     try {
       const res = await fetch("/api/posts", { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to load feed");
+
       setPosts(Array.isArray(json?.posts) ? json.posts : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load feed");
@@ -67,16 +71,18 @@ export default function FeedClient() {
 
   async function createPost() {
     const text = content.trim();
-    if (!text) return;
+    if (!text || posting) return;
 
     setErr(null);
     setPosting(true);
+
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: text }),
       });
+
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to post");
 
@@ -92,22 +98,16 @@ export default function FeedClient() {
     }
   }
 
+  const canPost = !!content.trim() && !posting;
+
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-2xl space-y-6">
+        {/* header */}
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-semibold">Feed</h1>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={createPost}
-              disabled={posting || !content.trim()}
-              className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {posting ? "Posting…" : "Post"}
-            </button>
-
             <button
               type="button"
               onClick={loadPosts}
@@ -120,24 +120,43 @@ export default function FeedClient() {
           </div>
         </div>
 
+        {/* composer */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write a post…"
             className="min-h-[96px] w-full resize-none rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm outline-none"
+            maxLength={20000}
           />
-          <div className="mt-3 flex items-center justify-between text-xs text-[#6B7A74]">
-            <span>{content.length}/20000</span>
-            {me?.username ? (
-              <Link href={`/u/${encodeURIComponent(me.username)}`} className="hover:underline">
-                Posting as @{me.username}
-              </Link>
-            ) : (
-              <Link href="/settings/profile" className="hover:underline">
-                Set up profile
-              </Link>
-            )}
+
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-xs text-[#6B7A74]">{content.length}/20000</div>
+
+            <div className="flex items-center gap-3">
+              {me?.username ? (
+                <Link
+                  href={`/u/${encodeURIComponent(me.username)}`}
+                  className="text-xs text-[#6B7A74] hover:underline"
+                >
+                  Posting as @{me.username}
+                </Link>
+              ) : (
+                <Link href="/settings/profile" className="text-xs text-[#6B7A74] hover:underline">
+                  Set up profile
+                </Link>
+              )}
+
+              {/* ✅ post button moved into composer (bottom-right) */}
+              <button
+                type="button"
+                onClick={createPost}
+                disabled={!canPost}
+                className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {posting ? "Posting…" : "Post"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -187,7 +206,6 @@ export default function FeedClient() {
 
                   <div className="mt-3 whitespace-pre-wrap text-sm">{p.content}</div>
 
-                  {/* ✅ Step 5: actions under every post */}
                   <PostActions postId={p.id} />
                 </div>
               );
