@@ -85,6 +85,28 @@ function buildLinePoints(values: number[], w: number, h: number, pad = 6) {
     .join(" ");
 }
 
+function Shell({
+  children,
+  title = "Back to feed",
+}: {
+  children: React.ReactNode;
+  title?: string;
+}) {
+  return (
+    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+      <div className="mx-auto max-w-2xl space-y-6">
+        <Link
+          href="/feed"
+          className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+        >
+          {title}
+        </Link>
+        {children}
+      </div>
+    </main>
+  );
+}
+
 export default async function PublicProfilePage({
   params,
 }: {
@@ -97,20 +119,12 @@ export default async function PublicProfilePage({
 
   if (!username) {
     return (
-      <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
-        <div className="mx-auto max-w-2xl space-y-4">
-          <Link
-            href="/feed"
-            className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
-          >
-            Back to feed
-          </Link>
-          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
-            <div className="text-lg font-semibold">Invalid profile</div>
-            <div className="mt-1 text-sm text-[#6B7A74]">Missing username.</div>
-          </div>
+      <Shell>
+        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+          <div className="text-lg font-semibold">Invalid profile</div>
+          <div className="mt-1 text-sm text-[#6B7A74]">Missing username.</div>
         </div>
-      </main>
+      </Shell>
     );
   }
 
@@ -126,39 +140,23 @@ export default async function PublicProfilePage({
 
   if (profErr) {
     return (
-      <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
-        <div className="mx-auto max-w-2xl space-y-4">
-          <Link
-            href="/feed"
-            className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
-          >
-            Back to feed
-          </Link>
-          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
-            <div className="text-lg font-semibold">Failed to load profile</div>
-            <div className="mt-2 text-sm text-red-700">{profErr.message}</div>
-          </div>
+      <Shell>
+        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+          <div className="text-lg font-semibold">Failed to load profile</div>
+          <div className="mt-2 text-sm text-red-700">{profErr.message}</div>
         </div>
-      </main>
+      </Shell>
     );
   }
 
   if (!profile) {
     return (
-      <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
-        <div className="mx-auto max-w-2xl space-y-4">
-          <Link
-            href="/feed"
-            className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
-          >
-            Back to feed
-          </Link>
-          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
-            <div className="text-lg font-semibold">Profile not found</div>
-            <div className="mt-1 text-sm text-[#6B7A74]">@{username}</div>
-          </div>
+      <Shell>
+        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+          <div className="text-lg font-semibold">Profile not found</div>
+          <div className="mt-1 text-sm text-[#6B7A74]">@{username}</div>
         </div>
-      </main>
+      </Shell>
     );
   }
 
@@ -183,7 +181,7 @@ export default async function PublicProfilePage({
   const holdings = (publicHoldings ?? []) as HoldingRow[];
   const totalAllocation = holdings.reduce((acc, h) => acc + (Number(h.amount) || 0), 0);
 
-  // Snapshots for line chart (only meaningful if this user has been creating snapshots)
+  // Snapshots (server) → collapse to latest per day
   const { data: snapRows } = await supabase
     .from("portfolio_snapshots")
     .select("id, created_at, user_id, total_value, currency")
@@ -197,20 +195,24 @@ export default async function PublicProfilePage({
     if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? 0));
   }
 
+  // Build last 7 days series
   const today = new Date();
   const lineDays: string[] = [];
   const lineVals: number[] = [];
-  for (let i = 29; i >= 0; i--) {
+  for (let i = 6; i >= 0; i--) {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
     const k = dayKey(d);
     lineDays.push(k);
     lineVals.push(byDay.get(k) ?? 0);
   }
 
+  // Force today to be live allocation so it updates immediately
+  if (lineVals.length) lineVals[lineVals.length - 1] = totalAllocation;
+
   const safeUsername = profile.username ?? "unknown";
   const initial = (safeUsername[0] ?? "?").toUpperCase();
 
-  // Pie data from holdings allocation
+  // Pie
   const pieItems = holdings
     .map((h, i) => ({
       label: String(h.symbol || "").toUpperCase(),
@@ -222,15 +224,19 @@ export default async function PublicProfilePage({
 
   const { gradient, rows: pieRows } = buildConicGradient(pieItems);
 
-  // Line SVG
+  // Line SVG + deltas
   const W = 520;
   const H = 110;
   const poly = buildLinePoints(lineVals, W, H, 8);
-  const maxV = Math.max(...lineVals, 0);
+
   const lastV = lineVals[lineVals.length - 1] ?? 0;
+  const prevV = lineVals[lineVals.length - 2] ?? 0;
   const firstV = lineVals[0] ?? 0;
-  const delta = lastV - firstV;
-  const deltaPct = firstV > 0 ? (delta / firstV) * 100 : 0;
+
+  const delta7Pct = firstV > 0 ? ((lastV - firstV) / firstV) * 100 : 0;
+  const delta1Pct = prevV > 0 ? ((lastV - prevV) / prevV) * 100 : 0;
+
+  const maxV = Math.max(...lineVals, 0);
 
   // Posts
   const { data: posts } = await supabase
@@ -271,6 +277,7 @@ export default async function PublicProfilePage({
           )}
         </div>
 
+        {/* Profile card */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="h-14 w-14 overflow-hidden rounded-full border border-[#D7E4DD] bg-[#F7FAF8] grid place-items-center">
@@ -322,7 +329,6 @@ export default async function PublicProfilePage({
                 </div>
               </div>
 
-              {/* Charts row */}
               <div className="grid gap-4 md:grid-cols-2">
                 {/* Pie */}
                 <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
@@ -342,10 +348,7 @@ export default async function PublicProfilePage({
                         pieRows.slice(0, 6).map((r: any) => (
                           <div key={r.label} className="flex items-center justify-between text-xs">
                             <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: r.color }}
-                              />
+                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
                               <span className="font-medium">{r.label}</span>
                             </div>
                             <span className="text-[#6B7A74]">{clamp(r.pct, 0, 100).toFixed(1)}%</span>
@@ -364,9 +367,9 @@ export default async function PublicProfilePage({
                 {/* Line */}
                 <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Last 30 days</div>
+                    <div className="text-sm font-semibold">Last 7 days</div>
                     <div className="text-xs text-[#6B7A74]">
-                      {maxV > 0 ? `${lastV.toLocaleString()}  (${deltaPct.toFixed(1)}%)` : "No snapshots yet"}
+                      {maxV > 0 ? `${lastV.toLocaleString()}  (7D ${delta7Pct.toFixed(1)}% • 1D ${delta1Pct.toFixed(1)}%)` : "No snapshots yet"}
                     </div>
                   </div>
 
