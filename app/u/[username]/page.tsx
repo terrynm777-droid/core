@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type ProfileRow = {
   id: string;
   username: string | null;
@@ -15,8 +18,19 @@ type PostRow = {
   created_at: string;
 };
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+type PublicPortfolioRow = {
+  id: string;
+  name: string;
+  is_public: boolean;
+  created_at: string;
+};
+
+type HoldingRow = {
+  id: string;
+  symbol: string;
+  amount: number;
+  currency: string | null;
+};
 
 export default async function PublicProfilePage({
   params,
@@ -25,11 +39,9 @@ export default async function PublicProfilePage({
 }) {
   const supabase = await createClient();
 
-  // ✅ Next build expects params to be a Promise in your project
   const { username: raw } = await params;
   const username = decodeURIComponent(raw || "").trim();
 
-  // Hard guard: /u/ with empty username
   if (!username) {
     return (
       <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
@@ -53,7 +65,6 @@ export default async function PublicProfilePage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // ✅ Fetch profile by username
   const { data: profile, error: profErr } = await supabase
     .from("profiles")
     .select("id, username, avatar_url, bio, trader_style")
@@ -100,7 +111,26 @@ export default async function PublicProfilePage({
 
   const isOwner = !!user && user.id === profile.id;
 
-  // ✅ Fetch recent posts by that user
+  // Public portfolio (only if is_public=true)
+  const { data: publicPortfolio } = await supabase
+    .from("portfolios")
+    .select("id, name, is_public, created_at")
+    .eq("user_id", profile.id)
+    .eq("is_public", true)
+    .maybeSingle<PublicPortfolioRow>();
+
+  const { data: publicHoldings, error: holdErr } = publicPortfolio?.id
+    ? await supabase
+        .from("portfolio_holdings")
+        .select("id, symbol, amount, currency")
+        .eq("portfolio_id", publicPortfolio.id)
+        .order("symbol", { ascending: true })
+    : { data: null, error: null };
+
+  const holdings = (publicHoldings ?? []) as HoldingRow[];
+  const totalAllocation = holdings.reduce((acc, h) => acc + (Number(h.amount) || 0), 0);
+
+  // Recent posts
   const { data: posts, error: postsErr } = await supabase
     .from("posts")
     .select("id, content, created_at")
@@ -188,6 +218,57 @@ export default async function PublicProfilePage({
               )}
             </div>
           </div>
+        </div>
+
+        {/* ✅ Public portfolio section */}
+        <div className="space-y-3">
+          <div className="text-sm font-semibold">Portfolio</div>
+
+          {holdErr ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              Failed to load portfolio: {holdErr.message}
+            </div>
+          ) : publicPortfolio ? (
+            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-base font-semibold">{publicPortfolio.name || "Portfolio"}</div>
+                  <div className="text-xs text-[#6B7A74]">Public</div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-xs text-[#6B7A74]">Total allocation</div>
+                  <div className="text-sm font-semibold">{totalAllocation.toLocaleString()}</div>
+                </div>
+              </div>
+
+              {holdings.length ? (
+                <div className="mt-4 overflow-hidden rounded-2xl border border-[#D7E4DD]">
+                  <div className="grid grid-cols-3 bg-[#F7FAF8] px-4 py-2 text-xs font-semibold text-[#4B5B55]">
+                    <div>Symbol</div>
+                    <div className="text-right">Amount</div>
+                    <div className="text-right">Currency</div>
+                  </div>
+
+                  <div className="divide-y divide-[#E6EEE9]">
+                    {holdings.map((h) => (
+                      <div key={h.id} className="grid grid-cols-3 px-4 py-2 text-sm">
+                        <div className="font-medium">{String(h.symbol || "").toUpperCase()}</div>
+                        <div className="text-right">{Number(h.amount || 0).toLocaleString()}</div>
+                        <div className="text-right text-[#6B7A74]">{h.currency || "—"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-[#6B7A74]">No holdings yet.</div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#6B7A74]">
+              This user’s portfolio is private.
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
