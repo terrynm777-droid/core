@@ -9,23 +9,75 @@ type ProfileRow = {
   trader_style: string | null;
 };
 
+type PostRow = {
+  id: string;
+  content: string;
+  created_at: string;
+};
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export default async function PublicProfilePage({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }) {
   const supabase = await createClient();
-  const username = decodeURIComponent(params.username);
+
+  // ✅ Next build expects params to be a Promise in your project
+  const { username: raw } = await params;
+  const username = decodeURIComponent(raw || "").trim();
+
+  // Hard guard: /u/ with empty username
+  if (!username) {
+    return (
+      <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+        <div className="mx-auto max-w-2xl space-y-4">
+          <Link
+            href="/feed"
+            className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+          >
+            Back to feed
+          </Link>
+          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="text-lg font-semibold">Invalid profile</div>
+            <div className="mt-1 text-sm text-[#6B7A74]">Missing username.</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
+  // ✅ Fetch profile by username
+  const { data: profile, error: profErr } = await supabase
     .from("profiles")
     .select("id, username, avatar_url, bio, trader_style")
     .eq("username", username)
     .maybeSingle<ProfileRow>();
+
+  if (profErr) {
+    return (
+      <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+        <div className="mx-auto max-w-2xl space-y-4">
+          <Link
+            href="/feed"
+            className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+          >
+            Back to feed
+          </Link>
+          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="text-lg font-semibold">Failed to load profile</div>
+            <div className="mt-2 text-sm text-red-700">{profErr.message}</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (!profile) {
     return (
@@ -48,12 +100,35 @@ export default async function PublicProfilePage({
 
   const isOwner = !!user && user.id === profile.id;
 
-  const { data: posts } = await supabase
+  // ✅ Fetch recent posts by that user
+  const { data: posts, error: postsErr } = await supabase
     .from("posts")
     .select("id, content, created_at")
     .eq("author_id", profile.id)
     .order("created_at", { ascending: false })
     .limit(20);
+
+  if (postsErr) {
+    return (
+      <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+        <div className="mx-auto max-w-2xl space-y-4">
+          <Link
+            href="/feed"
+            className="inline-flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
+          >
+            Back to feed
+          </Link>
+          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="text-lg font-semibold">Failed to load posts</div>
+            <div className="mt-2 text-sm text-red-700">{postsErr.message}</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const safeUsername = profile.username ?? "unknown";
+  const initial = (safeUsername[0] ?? "?").toUpperCase();
 
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
@@ -82,22 +157,7 @@ export default async function PublicProfilePage({
               </Link>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <form action={`/api/follow?username=${encodeURIComponent(username)}`} method="post">
-                <button
-                  type="submit"
-                  className="rounded-2xl bg-[#22C55E] px-4 py-2 text-sm font-medium text-white"
-                >
-                  Follow
-                </button>
-              </form>
-              <Link
-                href={`/dm/${encodeURIComponent(username)}`}
-                className="rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:shadow-sm"
-              >
-                DM
-              </Link>
-            </div>
+            <div className="text-xs text-[#6B7A74]">Public profile</div>
           )}
         </div>
 
@@ -110,25 +170,19 @@ export default async function PublicProfilePage({
                   src={profile.avatar_url}
                   alt="Avatar"
                   className="h-full w-full object-cover"
+                  referrerPolicy="no-referrer"
                 />
               ) : (
-                <span className="text-sm font-semibold text-[#6B7A74]">
-                  {(profile.username?.[0] || "?").toUpperCase()}
-                </span>
+                <span className="text-sm font-semibold text-[#6B7A74]">{initial}</span>
               )}
             </div>
 
             <div className="flex-1">
-              <div className="text-xl font-semibold">
-                @{profile.username || "unknown"}
-              </div>
-              <div className="mt-1 text-sm text-[#6B7A74]">
-                {profile.trader_style || "—"}
-              </div>
+              <div className="text-xl font-semibold">@{safeUsername}</div>
+              <div className="mt-1 text-sm text-[#6B7A74]">{profile.trader_style || "—"}</div>
+
               {profile.bio ? (
-                <div className="mt-3 whitespace-pre-wrap text-sm">
-                  {profile.bio}
-                </div>
+                <div className="mt-3 whitespace-pre-wrap text-sm">{profile.bio}</div>
               ) : (
                 <div className="mt-3 text-sm text-[#6B7A74]">No bio yet.</div>
               )}
@@ -140,17 +194,10 @@ export default async function PublicProfilePage({
           <div className="text-sm font-semibold">Recent posts</div>
 
           {posts && posts.length ? (
-            posts.map((p: any) => (
-              <div
-                key={p.id}
-                className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm"
-              >
-                <div className="text-xs text-[#6B7A74]">
-                  {new Date(p.created_at).toLocaleString()}
-                </div>
-                <div className="mt-2 whitespace-pre-wrap text-sm">
-                  {p.content}
-                </div>
+            (posts as PostRow[]).map((p) => (
+              <div key={p.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
+                <div className="text-xs text-[#6B7A74]">{new Date(p.created_at).toLocaleString()}</div>
+                <div className="mt-2 whitespace-pre-wrap text-sm">{p.content}</div>
               </div>
             ))
           ) : (
