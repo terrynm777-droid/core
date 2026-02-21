@@ -18,17 +18,43 @@ export async function GET(req: Request) {
   const symbol = String(searchParams.get("symbol") || "").trim().toUpperCase();
   if (!symbol) return NextResponse.json({ error: "Missing symbol" }, { status: 400 });
 
-  // last 7 days
+  // last ~7 days
   const to = new Date();
   const from = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
 
   try {
     const key = finnhubKey();
-    const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(symbol)}&from=${ymd(from)}&to=${ymd(to)}&token=${key}`;
+    const url =
+      `https://finnhub.io/api/v1/company-news` +
+      `?symbol=${encodeURIComponent(symbol)}` +
+      `&from=${ymd(from)}&to=${ymd(to)}` +
+      `&token=${encodeURIComponent(key)}`;
+
     const res = await fetch(url, { cache: "no-store" });
+
+    // Non-fatal provider limitations
+    if (res.status === 401 || res.status === 403 || res.status === 429) {
+      const body = await res.json().catch(() => null);
+      return NextResponse.json(
+        {
+          items: [],
+          blocked: true,
+          status: res.status,
+          reason: body?.error || "News unavailable (provider access/rate limit)",
+        },
+        { status: 200 }
+      );
+    }
+
     const json = await res.json().catch(() => null);
 
-    if (!res.ok) return NextResponse.json({ error: "News fetch failed" }, { status: 500 });
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: json?.error || `News fetch failed (${res.status})` },
+        { status: 500 }
+      );
+    }
+
     if (!Array.isArray(json)) return NextResponse.json({ items: [] }, { status: 200 });
 
     const items = json

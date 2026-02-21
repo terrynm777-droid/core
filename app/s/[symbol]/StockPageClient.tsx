@@ -21,9 +21,10 @@ type NewsItem = {
   summary?: string | null;
 };
 
-function clamp(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, n));
-}
+type MaybeBlocked<T> = {
+  blocked?: boolean;
+  reason?: string;
+} & T;
 
 function buildLinePoints(values: number[], w: number, h: number, pad = 8) {
   if (!values.length) return "";
@@ -49,30 +50,69 @@ export default function StockPageClient({ symbol }: { symbol: string }) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [chart, setChart] = useState<ChartPoint[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
+
   const [loading, setLoading] = useState(true);
+
+  // fatal = only for unexpected app errors (not provider limitations)
   const [err, setErr] = useState<string | null>(null);
+
+  // warn = provider blocked / partial loads
+  const [warn, setWarn] = useState<string | null>(null);
 
   async function load() {
     setErr(null);
+    setWarn(null);
     setLoading(true);
+
     try {
       const [qRes, cRes, nRes] = await Promise.all([
         fetch(`/api/stocks/quote?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
-        fetch(`/api/stocks/chart?symbol=${encodeURIComponent(symbol)}&range=6m`, { cache: "no-store" }),
+        fetch(`/api/stocks/chart?symbol=${encodeURIComponent(symbol)}&range=7d`, { cache: "no-store" }),
         fetch(`/api/stocks/news?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" }),
       ]);
 
-      const qJson = await qRes.json().catch(() => null);
-      const cJson = await cRes.json().catch(() => null);
-      const nJson = await nRes.json().catch(() => null);
+      const [qJson, cJson, nJson] = await Promise.all([
+        qRes.json().catch(() => null),
+        cRes.json().catch(() => null),
+        nRes.json().catch(() => null),
+      ]);
 
-      if (!qRes.ok) throw new Error(qJson?.error || "Failed to load quote");
-      if (!cRes.ok) throw new Error(cJson?.error || "Failed to load chart");
-      if (!nRes.ok) throw new Error(nJson?.error || "Failed to load news");
+      // QUOTE
+      if (qRes.ok) {
+        const payload = qJson as MaybeBlocked<{ quote?: Quote | null }>;
+        setQuote(payload?.quote ?? null);
+        if (payload?.blocked) {
+          setWarn(payload?.reason || "Quote unavailable (provider access/rate limit).");
+        }
+      } else {
+        // do NOT fatal here; just warn
+        setQuote(null);
+        setWarn((prev) => prev ?? (qJson?.error || "Quote unavailable."));
+      }
 
-      setQuote(qJson?.quote ?? null);
-      setChart(Array.isArray(cJson?.points) ? cJson.points : []);
-      setNews(Array.isArray(nJson?.items) ? nJson.items : []);
+      // CHART
+      if (cRes.ok) {
+        const payload = cJson as MaybeBlocked<{ points?: ChartPoint[] }>;
+        setChart(Array.isArray(payload?.points) ? payload.points : []);
+        if (payload?.blocked) {
+          setWarn((prev) => prev ?? (payload?.reason || "Chart unavailable (provider access/rate limit)."));
+        }
+      } else {
+        setChart([]);
+        setWarn((prev) => prev ?? (cJson?.error || "Chart unavailable."));
+      }
+
+      // NEWS
+      if (nRes.ok) {
+        const payload = nJson as MaybeBlocked<{ items?: NewsItem[] }>;
+        setNews(Array.isArray(payload?.items) ? payload.items : []);
+        if (payload?.blocked) {
+          setWarn((prev) => prev ?? (payload?.reason || "News unavailable (provider access/rate limit)."));
+        }
+      } else {
+        setNews([]);
+        setWarn((prev) => prev ?? (nJson?.error || "News unavailable."));
+      }
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
     } finally {
@@ -88,7 +128,10 @@ export default function StockPageClient({ symbol }: { symbol: string }) {
   const W = 640;
   const H = 180;
 
-  const closeVals = useMemo(() => chart.map((p) => Number(p.c ?? 0)).filter((x) => isFinite(x)), [chart]);
+  const closeVals = useMemo(
+    () => chart.map((p) => Number(p.c ?? 0)).filter((x) => isFinite(x)),
+    [chart]
+  );
   const poly = useMemo(() => buildLinePoints(closeVals, W, H, 10), [closeVals]);
 
   const dayBadge = useMemo(() => {
@@ -123,7 +166,7 @@ export default function StockPageClient({ symbol }: { symbol: string }) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-2xl font-semibold">{symbol}</div>
-              <div className="mt-1 text-sm text-[#6B7A74]">Quote + 6M chart</div>
+              <div className="mt-1 text-sm text-[#6B7A74]">Quote + 7D chart</div>
             </div>
 
             <div className="text-right">
@@ -136,8 +179,14 @@ export default function StockPageClient({ symbol }: { symbol: string }) {
           </div>
         </div>
 
+        {/* Fatal error (unexpected) */}
         {err ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+        ) : null}
+
+        {/* Provider warning (non-fatal) */}
+        {!err && warn ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{warn}</div>
         ) : null}
 
         {/* Chart */}
@@ -150,16 +199,20 @@ export default function StockPageClient({ symbol }: { symbol: string }) {
           </div>
 
           <div className="mt-3 overflow-hidden rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-2">
-            <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Price line chart">
-              <polyline
-                fill="none"
-                stroke="#22C55E"
-                strokeWidth="4"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                points={poly || ""}
-              />
-            </svg>
+            {closeVals.length ? (
+              <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Price line chart">
+                <polyline
+                  fill="none"
+                  stroke="#22C55E"
+                  strokeWidth="4"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  points={poly || ""}
+                />
+              </svg>
+            ) : (
+              <div className="h-[180px]" />
+            )}
           </div>
 
           <div className="mt-2 flex items-center justify-between text-[11px] text-[#6B7A74]">
@@ -186,8 +239,8 @@ export default function StockPageClient({ symbol }: { symbol: string }) {
                 >
                   <div className="text-sm font-semibold">{n.headline}</div>
                   <div className="mt-1 text-xs text-[#6B7A74]">
-                    {n.source ? n.source : "News"}{" "}
-                    {n.datetime ? `• ${new Date(n.datetime * 1000).toLocaleString()}` : ""}
+                    {n.source ? n.source : "News"}
+                    {n.datetime ? ` • ${new Date(n.datetime * 1000).toLocaleString()}` : ""}
                   </div>
                   {n.summary ? <div className="mt-2 text-sm text-[#4B5B55]">{n.summary}</div> : null}
                 </a>

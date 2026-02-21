@@ -11,6 +11,7 @@ export async function GET(req: Request) {
 
   try {
     const q = await finnhubQuote(symbol);
+
     return NextResponse.json(
       {
         quote: {
@@ -24,6 +25,19 @@ export async function GET(req: Request) {
       { status: 200 }
     );
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Quote failed" }, { status: 500 });
+    const msg = String(e?.message || "Quote failed");
+
+    // If your lib throws messages that include status, treat access/rate-limit as non-fatal.
+    const looksBlocked =
+      msg.includes("401") || msg.includes("403") || msg.includes("429") || msg.toLowerCase().includes("rate");
+
+    if (looksBlocked) {
+      return NextResponse.json(
+        { quote: null, blocked: true, reason: msg },
+        { status: 200 }
+      );
+    }
+
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
