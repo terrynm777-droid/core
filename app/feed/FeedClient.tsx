@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AvatarMenu from "@/app/components/AvatarMenu";
@@ -34,8 +34,14 @@ function isProbablyTicker(s: string) {
   // AAPL, TSLA, 7203.T, BRK.B, RIO.AX etc
   const t = s.trim().toUpperCase();
   if (!t) return false;
-  if (t.length > 12) return false;
-  return /^[A-Z0-9.\-]{1,12}$/.test(t) && /[A-Z0-9]/.test(t);
+  if (t.length > 20) return false; // allow longer suffixes like BRK.B / 7203.T / RIO.AX
+  return /^[A-Z0-9.\-]{1,20}$/.test(t) && /[A-Z0-9]/.test(t);
+}
+
+// ✅ ONE canonical stock route.
+// Make sure you have: app/s/[symbol]/page.tsx (and StockPageClient next to it if you use it)
+function stockHref(symbol: string) {
+  return `/s/${encodeURIComponent(symbol.toUpperCase())}`;
 }
 
 export default function FeedClient() {
@@ -150,7 +156,11 @@ export default function FeedClient() {
         setSymHits(
           hits
             .slice(0, 8)
-            .map((x) => ({ symbol: String(x.symbol || ""), name: x.name, type: x.type }))
+            .map((x) => ({
+              symbol: String(x.symbol || ""),
+              name: x.name,
+              type: x.type,
+            }))
             .filter((x) => x.symbol)
         );
       } catch {
@@ -174,9 +184,9 @@ export default function FeedClient() {
       return;
     }
 
-    // ticker-like → quotes
+    // ticker-like → stock page
     if (isProbablyTicker(text)) {
-      router.push(`/quotes?symbol=${encodeURIComponent(text.toUpperCase())}`);
+      router.push(stockHref(text));
       return;
     }
 
@@ -263,11 +273,11 @@ export default function FeedClient() {
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           setOpen(false);
-                          router.push(`/quotes?symbol=${encodeURIComponent(h.symbol)}`);
+                          router.push(stockHref(h.symbol));
                         }}
                         className="w-full px-4 py-3 text-left hover:bg-[#F7FAF8]"
                       >
-                        <div className="text-sm font-semibold">{h.symbol}</div>
+                        <div className="text-sm font-semibold">{String(h.symbol || "").toUpperCase()}</div>
                         {h.name ? <div className="text-xs text-[#6B7A74]">{h.name}</div> : null}
                       </button>
                     ))}
