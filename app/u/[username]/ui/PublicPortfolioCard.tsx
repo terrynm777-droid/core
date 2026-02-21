@@ -11,7 +11,24 @@ type HoldingRow = {
 };
 
 type PublicSnapPoint = { day: string; total_usd: number };
-type PublicLiveValue = { totalUsd: number; dayChangePct: number; dayChangeAmount: number };
+
+type LivePosition = {
+  symbol: string;
+  currency: string;
+  shares: number;
+  prevClose: number;
+  current: number;
+  prevUsd: number;
+  nowUsd: number;
+  dayChangeUsd: number;
+};
+
+type PublicLiveValue = {
+  totalUsd: number;
+  dayChangePct: number;
+  dayChangeAmount: number;
+  positions: LivePosition[];
+};
 
 const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155", "#94A3B8"];
 
@@ -63,7 +80,7 @@ function dayOverDayPct(series: number[], i: number) {
 
 function buildConicGradient(items: { label: string; value: number; color: string }[]) {
   const total = items.reduce((a, x) => a + x.value, 0);
-  if (!total) return { gradient: "conic-gradient(#E6EEE9 0 100%)", rows: [] as any[] };
+  if (!total) return { gradient: "conic-gradient(#E6EEE9 0 100%)", rows: [] as any[], total: 0 };
 
   let acc = 0;
   const stops: string[] = [];
@@ -79,7 +96,7 @@ function buildConicGradient(items: { label: string; value: number; color: string
       return { ...x, pct };
     });
 
-  return { gradient: `conic-gradient(${stops.join(", ")})`, rows };
+  return { gradient: `conic-gradient(${stops.join(", ")})`, rows, total };
 }
 
 async function fetchJsonOrThrow(url: string) {
@@ -95,6 +112,27 @@ async function fetchJsonOrThrow(url: string) {
     throw new Error(`${res.status} ${msg}`.trim());
   }
   return json;
+}
+
+function safeNum(x: any, fallback = 0) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function safeStr(x: any, fallback = "") {
+  const s = String(x ?? "").trim();
+  return s ? s : fallback;
+}
+
+// stable color per symbol
+function hashColor(symbol: string) {
+  let h = 2166136261;
+  for (let i = 0; i < symbol.length; i++) {
+    h ^= symbol.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const idx = Math.abs(h) % PALETTE.length;
+  return PALETTE[idx];
 }
 
 export default function PublicPortfolioCard(props: {
@@ -118,19 +156,35 @@ export default function PublicPortfolioCard(props: {
 
       try {
         const liveJson = await fetchJsonOrThrow(`/api/public/portfolio/value?username=${encodeURIComponent(username)}`);
+
+        const positions: LivePosition[] = Array.isArray(liveJson?.positions)
+          ? liveJson.positions.map((p: any): LivePosition => ({
+              symbol: safeStr(p?.symbol).toUpperCase(),
+              currency: safeStr(p?.currency, "USD").toUpperCase(),
+              shares: safeNum(p?.shares, 0),
+              prevClose: safeNum(p?.prevClose, 0),
+              current: safeNum(p?.current, 0),
+              prevUsd: safeNum(p?.prevUsd, 0),
+              nowUsd: safeNum(p?.nowUsd, 0),
+              dayChangeUsd: safeNum(p?.dayChangeUsd, 0),
+            }))
+          : [];
+
         const nextLive: PublicLiveValue = {
-          totalUsd: Number(liveJson?.totalUsd ?? NaN),
-          dayChangePct: Number(liveJson?.dayChangePct ?? NaN),
-          dayChangeAmount: Number(liveJson?.dayChangeAmount ?? NaN),
+          totalUsd: safeNum(liveJson?.totalUsd, NaN),
+          dayChangePct: safeNum(liveJson?.dayChangePct, NaN),
+          dayChangeAmount: safeNum(liveJson?.dayChangeAmount, NaN),
+          positions,
         };
 
+        // snapshots are ONLY for chart history
         const snapJson = await fetchJsonOrThrow(
           `/api/public/portfolio/snapshot?username=${encodeURIComponent(username)}`
         );
         const pts = Array.isArray(snapJson?.points) ? snapJson.points : [];
         const nextSnaps = pts.map((p: any) => ({
           day: String(p.day),
-          total_usd: Number(p.total_usd ?? NaN),
+          total_usd: safeNum(p.total_usd, NaN),
         }));
 
         if (!alive) return;
@@ -148,9 +202,9 @@ export default function PublicPortfolioCard(props: {
     };
   }, [username]);
 
-  // Build series like PortfolioEditor:
+  // Build series:
   // - sort asc
-  // - ensure "today" exists
+  // - ensure today exists
   // - force today == live.totalUsd (so header & chart match)
   const { seriesDays, seriesRaw } = useMemo(() => {
     const pts = [...snapPoints]
@@ -181,19 +235,21 @@ export default function PublicPortfolioCard(props: {
 
   const seriesPct = useMemo(() => normalizeToPct(seriesRaw), [seriesRaw]);
 
-  const pieItems = useMemo(
-    () =>
-      holdings
-        .map((h, i) => ({
-          label: String(h.symbol || "").toUpperCase(),
-          value: Number(h.amount) || 0,
-          color: PALETTE[i % PALETTE.length],
-        }))
-        .filter((x) => x.value > 0),
-    [holdings]
-  );
+  // PIE SHOULD BE USD ALLOCATION, NOT SHARES
+  const pieItems = useMemo(() => {
+    const ps = (live?.positions ?? []).filter((p) => p.nowUsd > 0);
+    if (!ps.length) return [];
+    return ps
+      .slice()
+      .sort((a, b) => b.nowUsd - a.nowUsd)
+      .map((p) => ({
+        label: p.symbol,
+        value: p.nowUsd,
+        color: hashColor(p.symbol),
+      }));
+  }, [live]);
 
-  const { gradient, rows: pieRows } = useMemo(() => buildConicGradient(pieItems), [pieItems]);
+  const { gradient, rows: pieRows, total: pieTotal } = useMemo(() => buildConicGradient(pieItems), [pieItems]);
 
   return (
     <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm space-y-4">
@@ -205,12 +261,17 @@ export default function PublicPortfolioCard(props: {
 
         <div className="text-right">
           <div className="text-xs text-[#6B7A74]">Total (USD)</div>
-          <div className="text-sm font-semibold">{live && Number.isFinite(live.totalUsd) ? `$${fmtMoney(live.totalUsd)}` : "—"}</div>
+          <div className="text-sm font-semibold">
+            {live && Number.isFinite(live.totalUsd) ? `$${fmtMoney(live.totalUsd)}` : "—"}
+          </div>
           <div className="text-xs text-[#6B7A74]">
             Today{" "}
             <span className={live && Number(live.dayChangePct) >= 0 ? "text-green-600" : "text-red-600"}>
               {live && Number.isFinite(live.dayChangePct) ? fmtPct(live.dayChangePct) : "—"}
             </span>
+            {live && Number.isFinite(live.dayChangeAmount) ? (
+              <span className="ml-2 text-[#6B7A74]">({fmtMoney(live.dayChangeAmount)})</span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -222,7 +283,9 @@ export default function PublicPortfolioCard(props: {
         <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Allocation</div>
-            <div className="text-xs text-[#6B7A74]">{pieRows.length ? `${pieRows.length} holdings` : ""}</div>
+            <div className="text-xs text-[#6B7A74]">
+              {pieRows.length ? `${pieRows.length} positions • $${fmtMoney(pieTotal)}` : ""}
+            </div>
           </div>
 
           <div className="mt-3 flex items-start gap-4">
@@ -243,14 +306,16 @@ export default function PublicPortfolioCard(props: {
                   </div>
                 ))
               ) : (
-                <div className="text-xs text-[#6B7A74]">No holdings yet.</div>
+                <div className="text-xs text-[#6B7A74]">No positions yet.</div>
               )}
-              {pieRows.length > 6 ? <div className="text-[11px] text-[#6B7A74]">+ {pieRows.length - 6} more</div> : null}
+              {pieRows.length > 6 ? (
+                <div className="text-[11px] text-[#6B7A74]">+ {pieRows.length - 6} more</div>
+              ) : null}
             </div>
           </div>
         </div>
 
-        {/* Chart (same style/behavior as editor) */}
+        {/* Chart */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Performance</div>
@@ -261,18 +326,18 @@ export default function PublicPortfolioCard(props: {
             {seriesDays.length === 0 ? (
               <div className="text-xs text-[#6B7A74]">No history yet.</div>
             ) : (
-              <ChartSvg days={seriesDays} portfolioRaw={seriesRaw} portfolioY={seriesPct} />
+              <ChartSvg days={seriesDays} portfolioRaw={seriesRaw} portfolioY={seriesPct} live={live} />
             )}
           </div>
         </div>
       </div>
 
-      {/* Holdings table */}
+      {/* Holdings table (still shows stored holdings list) */}
       {holdings.length ? (
         <div className="overflow-hidden rounded-2xl border border-[#D7E4DD]">
           <div className="grid grid-cols-3 bg-[#F7FAF8] px-4 py-2 text-xs font-semibold text-[#4B5B55]">
             <div>Symbol</div>
-            <div className="text-right">Amount</div>
+            <div className="text-right">Shares</div>
             <div className="text-right">Currency</div>
           </div>
 
@@ -293,7 +358,7 @@ export default function PublicPortfolioCard(props: {
   );
 }
 
-function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: number[] }) {
+function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: number[]; live: PublicLiveValue | null }) {
   const W = 720;
   const H = 260;
   const PAD_L = 14;
@@ -382,11 +447,17 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
   const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : NaN;
   const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : NaN;
 
+  // KEY FIX: last point uses authoritative live.dayChangePct
   const hoverDodPct = useMemo(() => {
     if (hoverIdx == null) return NaN;
     const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
+    const isLast = idx === props.portfolioRaw.length - 1;
+
+    if (isLast && props.live && Number.isFinite(Number(props.live.dayChangePct))) {
+      return Number(props.live.dayChangePct);
+    }
     return dayOverDayPct(props.portfolioRaw, idx);
-  }, [hoverIdx, props.portfolioRaw]);
+  }, [hoverIdx, props.portfolioRaw, props.live]);
 
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;

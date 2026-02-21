@@ -1,42 +1,49 @@
+// FILE 2: app/api/public/portfolio/value/route.ts
+// (PUBLIC) — SAME DAILY % MATH AS PRIVATE (prevClose vs current), NOT snapshots
+
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getUsdBaseRates } from "@/lib/fx";
-import { getLiveQuotes } from "@/lib/prices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type HoldingRow = { symbol: string | null; amount: number | string | null; currency: string | null };
+type Holding = { symbol: string; shares: number; currency: string };
+type FinnQuote = { c: number; pc: number };
 
-type Holding = {
-  symbol: string;
-  shares: number;
-  currency: string;
-};
-
-type SnapRow = { day: string; total_usd: number | null };
-
-function safeNum(x: any, fallback = 0) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : fallback;
-}
-function safeStr(x: any, fallback = "") {
-  const s = String(x ?? "").trim();
-  return s ? s : fallback;
-}
-
-// Returns USD per 1 unit of currency.
-// NOTE: kept your heuristic because your fx provider shape/quote direction is unknown.
 function toUsdPerUnit(currency: string, raw: number) {
-  const c = currency.toUpperCase();
   if (!Number.isFinite(raw) || raw <= 0) return 0;
+  const c = currency.toUpperCase();
   if (c === "USD") return 1;
-  if (raw > 5) return 1 / raw; // likely JPY-per-USD style
-  return raw; // likely USD-per-unit
+  if (raw > 5) return 1 / raw;
+  return raw;
 }
 
-function todayUtcDay() {
-  return new Date().toISOString().slice(0, 10);
+async function getFinnhubQuotes(symbols: string[]): Promise<Record<string, { current: number; prevClose: number }>> {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) throw new Error("Missing FINNHUB_API_KEY");
+
+  const out: Record<string, { current: number; prevClose: number }> = {};
+
+  await Promise.all(
+    symbols.map(async (s) => {
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${key}`, {
+        cache: "no-store",
+      });
+
+      const j = (await r.json().catch(() => null)) as FinnQuote | null;
+      const current = Number(j?.c ?? 0);
+      const prevClose = Number(j?.pc ?? 0);
+
+      out[s] = {
+        current: Number.isFinite(current) ? current : 0,
+        prevClose: Number.isFinite(prevClose) ? prevClose : 0,
+      };
+    })
+  );
+
+  return out;
 }
 
 export async function GET(req: Request) {
@@ -44,27 +51,14 @@ export async function GET(req: Request) {
   const username = searchParams.get("username");
   if (!username) return NextResponse.json({ error: "Missing username" }, { status: 400 });
 
-  // If this is missing on Vercel, your public page will show 0s or fail silently elsewhere.
-  if (!process.env.FINNHUB_API_KEY) {
-    return NextResponse.json(
-      { error: "Missing FINNHUB_API_KEY env var" },
-      { status: 500 }
-    );
-  }
-
   const supabase = await createClient();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("username", username)
-    .maybeSingle();
-
+  const { data: profile } = await supabase.from("profiles").select("id").eq("username", username).maybeSingle();
   if (!profile?.id) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
   const { data: portfolio } = await supabase
     .from("portfolios")
-    .select("id,is_public")
+    .select("id, is_public")
     .eq("user_id", profile.id)
     .maybeSingle();
 
@@ -74,89 +68,62 @@ export async function GET(req: Request) {
 
   const { data: rows } = await supabase
     .from("portfolio_holdings")
-    .select("symbol,amount,currency")
+    .select("symbol, amount, currency")
     .eq("portfolio_id", portfolio.id)
     .returns<HoldingRow[]>();
 
-  const holdings: Holding[] = (rows ?? [])
-    .map((r): Holding => ({
-      symbol: safeStr(r.symbol).toUpperCase(),
-      shares: safeNum(r.amount, 0),
-      currency: safeStr(r.currency, "USD").toUpperCase(),
+  const hs: Holding[] = (rows ?? [])
+    .map((r) => ({
+      symbol: String(r.symbol ?? "").toUpperCase().trim(),
+      shares: Number(r.amount ?? 0),
+      currency: String(r.currency ?? "USD").toUpperCase().trim(),
     }))
-    .filter((h) => Boolean(h.symbol) && Number.isFinite(h.shares) && h.shares > 0);
+    .filter((h) => h.symbol && Number.isFinite(h.shares) && h.shares > 0);
 
-  if (holdings.length === 0) {
-    return NextResponse.json({
-      totalUsd: 0,
-      dayChangeAmount: 0,
-      dayChangePct: 0,
-      positions: [],
-    });
+  if (!hs.length) {
+    return NextResponse.json({ totalUsd: 0, dayChangeAmount: 0, dayChangePct: 0, positions: [] });
   }
 
-  const symbols = Array.from(new Set(holdings.map((h) => h.symbol)));
-  const currencies = Array.from(new Set(holdings.map((h) => h.currency)));
+  const symbols = Array.from(new Set(hs.map((h) => h.symbol)));
+  const currencies = Array.from(new Set(hs.map((h) => h.currency)));
 
-  const [quotes, fxRaw] = await Promise.all([
-    getLiveQuotes(symbols),
-    getUsdBaseRates(currencies),
-  ]);
+  const [quotes, fxRaw] = await Promise.all([getFinnhubQuotes(symbols), getUsdBaseRates(currencies)]);
+  const fxRates: Record<string, number> = (fxRaw as any)?.rates ?? {};
 
-  const fxRates: Record<string, number> =
-    (fxRaw as any)?.rates && typeof (fxRaw as any)?.rates === "object"
-      ? (fxRaw as any).rates
-      : (fxRaw as any) && typeof fxRaw === "object"
-        ? (fxRaw as any)
-        : {};
+  const positions = hs.map((h) => {
+    const q = quotes[h.symbol] ?? { current: 0, prevClose: 0 };
 
-  const positions = holdings
-    .map((h) => {
-      const price = safeNum((quotes as any)?.[h.symbol], 0);
-      const rawFx = safeNum(fxRates[h.currency], h.currency === "USD" ? 1 : 0);
-      const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
-      const usdValue =
-        price > 0 && usdPerUnit > 0 ? h.shares * price * usdPerUnit : 0;
+    const rawFx = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
+    const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
 
-      return {
-        symbol: h.symbol,
-        currency: h.currency,
-        shares: h.shares,
-        price,
-        usdValue,
-      };
-    })
-    .filter((p) => p.usdValue > 0);
+    const prevClose = Number.isFinite(q.prevClose) && q.prevClose > 0 ? q.prevClose : q.current;
+    const current = q.current;
 
-  const totalUsd = positions.reduce((a, p) => a + p.usdValue, 0);
+    const prevUsd =
+      usdPerUnit > 0 && prevClose > 0 ? Number(h.shares) * Number(prevClose) * Number(usdPerUnit) : 0;
+    const nowUsd = usdPerUnit > 0 && current > 0 ? Number(h.shares) * Number(current) * Number(usdPerUnit) : 0;
 
-  // Correct day-over-day:
-  // - if a snapshot exists for today, compare against the most recent snapshot BEFORE today
-  // - else compare against the most recent snapshot (yesterday/previous)
-  const { data: snaps } = await supabase
-    .from("portfolio_snapshots")
-    .select("day,total_usd")
-    .eq("user_id", profile.id)
-    .order("day", { ascending: false })
-    .limit(2)
-    .returns<SnapRow[]>();
+    return {
+      symbol: h.symbol,
+      currency: h.currency,
+      shares: h.shares,
+      prevClose,
+      current,
+      prevUsd,
+      nowUsd,
+      dayChangeUsd: nowUsd - prevUsd,
+    };
+  });
 
-  const tday = todayUtcDay();
-  const s0 = snaps?.[0];
-  const s1 = snaps?.[1];
-
-  const prev =
-    s0?.day === tday
-      ? safeNum(s1?.total_usd, safeNum(s0?.total_usd, totalUsd))
-      : safeNum(s0?.total_usd, totalUsd);
-
-  const diff = totalUsd - prev;
-  const pct = prev > 0 ? (diff / prev) * 100 : 0;
+  const totalUsd = positions.reduce((a, p) => a + (Number.isFinite(p.nowUsd) ? p.nowUsd : 0), 0);
+  const prevTotalUsd = positions.reduce((a, p) => a + (Number.isFinite(p.prevUsd) ? p.prevUsd : 0), 0);
+  const dayChangeAmount = totalUsd - prevTotalUsd;
+  const dayChangePct = prevTotalUsd > 0 ? (dayChangeAmount / prevTotalUsd) * 100 : 0;
 
   return NextResponse.json({
     totalUsd,
-    dayChangeAmount: diff,
-    dayChangePct: pct,
+    dayChangeAmount,
+    dayChangePct,
     positions,
   });
 }
