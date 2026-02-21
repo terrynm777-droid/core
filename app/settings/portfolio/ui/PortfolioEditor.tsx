@@ -56,6 +56,15 @@ function normalizeToPct(series: number[]) {
   });
 }
 
+// NEW: day-over-day % change at index i (compares to i-1 only)
+function dayOverDayPct(series: number[], i: number) {
+  if (i <= 0) return NaN;
+  const prev = Number(series[i - 1]);
+  const cur = Number(series[i]);
+  if (!Number.isFinite(prev) || !Number.isFinite(cur) || prev <= 0) return NaN;
+  return ((cur - prev) / prev) * 100;
+}
+
 function clampIdx(i: number, n: number) {
   if (n <= 0) return 0;
   return Math.max(0, Math.min(n - 1, i));
@@ -70,7 +79,8 @@ function fmtMoney(x: number) {
 function fmtPct(x: number) {
   const n = Number(x);
   if (!Number.isFinite(n)) return "—";
-  return `${n.toFixed(2)}%`;
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(2)}%`;
 }
 
 function shortDay(day: string) {
@@ -317,11 +327,17 @@ export default function PortfolioEditor() {
 
     const now = new Date();
     const daysBack =
-      resolution === "1D" ? 5 :
-      resolution === "1W" ? 28 :
-      resolution === "1M" ? 90 :
-      resolution === "3M" ? 180 :
-      resolution === "1Y" ? 365 : 3650;
+      resolution === "1D"
+        ? 5
+        : resolution === "1W"
+          ? 28
+          : resolution === "1M"
+            ? 90
+            : resolution === "3M"
+              ? 180
+              : resolution === "1Y"
+                ? 365
+                : 3650;
 
     const cutoff = new Date(now.getTime() - daysBack * 86400_000);
 
@@ -433,6 +449,8 @@ export default function PortfolioEditor() {
               portfolioRaw={portfolioRaw}
               portfolioY={portfolioY}
               normalizeMode={normalizeMode}
+              // NEW: pass raw series so tooltip can show day-over-day %
+              rawSeriesForDod={portfolioRaw}
             />
           )}
         </div>
@@ -451,9 +469,7 @@ export default function PortfolioEditor() {
       <div className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-4 py-3">
         <div>
           <div className="text-sm font-semibold">Public portfolio</div>
-          <div className="text-xs text-[#6B7A74]">
-            {isPublic ? "Anyone with the link can view it." : "Only you can view it."}
-          </div>
+          <div className="text-xs text-[#6B7A74]">{isPublic ? "Anyone with the link can view it." : "Only you can view it."}</div>
         </div>
         <button
           type="button"
@@ -575,6 +591,8 @@ function ChartSvg(props: {
   portfolioRaw: number[];
   portfolioY: number[];
   normalizeMode: "pct" | "price";
+  // NEW: raw series used for day-over-day calc (matches days)
+  rawSeriesForDod: number[];
 }) {
   const W = 720;
   const H = 260;
@@ -667,6 +685,13 @@ function ChartSvg(props: {
   const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : 0;
   const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : 0;
 
+  // NEW: day-over-day percent (always computed from RAW so deletes/adds don’t create “baseline” artifacts)
+  const hoverDodPct = useMemo(() => {
+    if (hoverIdx == null) return NaN;
+    const idx = clampIdx(hoverIdx, props.rawSeriesForDod.length);
+    return dayOverDayPct(props.rawSeriesForDod, idx);
+  }, [hoverIdx, props.rawSeriesForDod]);
+
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;
     if (!el) return;
@@ -684,8 +709,15 @@ function ChartSvg(props: {
       {hoverIdx != null ? (
         <div className="pointer-events-none absolute left-3 top-2 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-xs shadow-sm">
           <div className="font-medium">{hoverDay}</div>
+
+          {/* CHANGED: tooltip % is now day-over-day (previous day only) */}
           <div className="text-[#6B7A74]">
-            {props.normalizeMode === "pct" ? `Change: ${fmtPct(hoverY)}` : `Value: $${fmtMoney(hoverY)}`}
+            Day: <span className="font-medium">{fmtPct(hoverDodPct)}</span>
+          </div>
+
+          {/* keep existing lines */}
+          <div className="text-[#6B7A74]">
+            {props.normalizeMode === "pct" ? `Series: ${fmtPct(hoverY)}` : `Value: $${fmtMoney(hoverY)}`}
           </div>
           <div className="text-[#6B7A74]">Total: ${fmtMoney(hoverRaw)}</div>
         </div>
@@ -720,7 +752,14 @@ function ChartSvg(props: {
         <path d={pathFor(props.portfolioY)} fill="none" stroke="#0B0F0E" strokeWidth="2" />
 
         {hoverIdx != null ? (
-          <line x1={xAt(hoverIdx)} y1={PAD_T} x2={xAt(hoverIdx)} y2={H - PAD_B} stroke="#9CA3AF" strokeWidth="1" />
+          <line
+            x1={xAt(hoverIdx)}
+            y1={PAD_T}
+            x2={xAt(hoverIdx)}
+            y2={H - PAD_B}
+            stroke="#9CA3AF"
+            strokeWidth="1"
+          />
         ) : null}
       </svg>
     </div>

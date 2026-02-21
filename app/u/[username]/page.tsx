@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -42,7 +43,7 @@ type SnapshotRow = {
 
 const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155", "#94A3B8"];
 
-function dayKey(d: Date) {
+function dayKeyUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
@@ -56,6 +57,7 @@ function buildConicGradient(items: { label: string; value: number; color: string
 
   let acc = 0;
   const stops: string[] = [];
+
   const rows = items
     .filter((x) => x.value > 0)
     .map((x) => {
@@ -89,7 +91,7 @@ function Shell({
   children,
   title = "Back to feed",
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   title?: string;
 }) {
   return (
@@ -105,6 +107,11 @@ function Shell({
       </div>
     </main>
   );
+}
+
+function pctChange(newV: number, oldV: number) {
+  if (!isFinite(newV) || !isFinite(oldV) || oldV <= 0) return null;
+  return ((newV - oldV) / oldV) * 100;
 }
 
 export default async function PublicProfilePage({
@@ -181,13 +188,13 @@ export default async function PublicProfilePage({
   const holdings = (publicHoldings ?? []) as HoldingRow[];
   const totalAllocation = holdings.reduce((acc, h) => acc + (Number(h.amount) || 0), 0);
 
-  // Snapshots (server) → collapse to latest per day
+  // Snapshots (latest per day) + carry-forward so the line/deltas don't get stuck at 0
   const { data: snapRows } = await supabase
     .from("portfolio_snapshots")
     .select("id, created_at, user_id, total_value, currency")
     .eq("user_id", profile.id)
     .order("created_at", { ascending: false })
-    .limit(220);
+    .limit(400);
 
   const byDay = new Map<string, number>();
   for (const r of (snapRows ?? []) as SnapshotRow[]) {
@@ -195,18 +202,24 @@ export default async function PublicProfilePage({
     if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? 0));
   }
 
-  // Build last 7 days series
+  // Build last 7 UTC days, but carry-forward the last known value
   const today = new Date();
   const lineDays: string[] = [];
   const lineVals: number[] = [];
+
+  let carry: number | null = null;
   for (let i = 6; i >= 0; i--) {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
-    const k = dayKey(d);
+    const k = dayKeyUTC(d);
     lineDays.push(k);
-    lineVals.push(byDay.get(k) ?? 0);
+
+    const v = byDay.get(k);
+    if (isFinite(Number(v))) carry = Number(v);
+
+    lineVals.push(carry ?? 0);
   }
 
-  // Force today to be live allocation so it updates immediately
+  // Make "today" live based on the actual current holdings allocation (updates immediately)
   if (lineVals.length) lineVals[lineVals.length - 1] = totalAllocation;
 
   const safeUsername = profile.username ?? "unknown";
@@ -231,10 +244,12 @@ export default async function PublicProfilePage({
 
   const lastV = lineVals[lineVals.length - 1] ?? 0;
   const prevV = lineVals[lineVals.length - 2] ?? 0;
-  const firstV = lineVals[0] ?? 0;
 
-  const delta7Pct = firstV > 0 ? ((lastV - firstV) / firstV) * 100 : 0;
-  const delta1Pct = prevV > 0 ? ((lastV - prevV) / prevV) * 100 : 0;
+  // For 7D baseline, use the first non-zero value in the series if possible
+  const firstNonZero = lineVals.find((v) => v > 0) ?? 0;
+
+  const delta7Pct = pctChange(lastV, firstNonZero);
+  const delta1Pct = pctChange(lastV, prevV);
 
   const maxV = Math.max(...lineVals, 0);
 
@@ -369,7 +384,15 @@ export default async function PublicProfilePage({
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold">Last 7 days</div>
                     <div className="text-xs text-[#6B7A74]">
-                      {maxV > 0 ? `${lastV.toLocaleString()}  (7D ${delta7Pct.toFixed(1)}% • 1D ${delta1Pct.toFixed(1)}%)` : "No snapshots yet"}
+                      {maxV > 0 ? (
+                        <>
+                          {lastV.toLocaleString()}{" "}
+                          (7D {delta7Pct === null ? "—" : `${delta7Pct.toFixed(1)}%`} • 1D{" "}
+                          {delta1Pct === null ? "—" : `${delta1Pct.toFixed(1)}%`})
+                        </>
+                      ) : (
+                        "No snapshots yet"
+                      )}
                     </div>
                   </div>
 
@@ -435,9 +458,7 @@ export default async function PublicProfilePage({
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#6B7A74]">
-              No posts yet.
-            </div>
+            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#6B7A74]">No posts yet.</div>
           )}
         </div>
       </div>
