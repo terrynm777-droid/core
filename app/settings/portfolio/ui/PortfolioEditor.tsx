@@ -1,3 +1,4 @@
+// FILE 2: app/settings/portfolio/ui/PortfolioEditor.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -19,9 +20,8 @@ type SnapPoint = { day: string; total_usd: number };
 const CURRENCIES = ["USD", "JPY", "AUD", "HKD", "EUR", "GBP", "CNY", "CAD", "CHF", "SGD"];
 const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
 
-function clamp(n: number) {
-  if (!isFinite(n)) return 0;
-  if (n < 0) return 0;
+function clampNonNeg(n: number) {
+  if (!Number.isFinite(n) || n < 0) return 0;
   return n;
 }
 
@@ -29,8 +29,9 @@ function toUsdPerUnit(currency: string, raw: number) {
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   const c = currency.toUpperCase();
   if (c === "USD") return 1;
-  if (raw > 5) return 1 / raw; // JPY-style quote
-  return raw; // already USD per unit
+  // crude heuristic: if quote looks like JPY per USD, invert it
+  if (raw > 5) return 1 / raw;
+  return raw;
 }
 
 function normalizeRates(fx: any): Record<string, number> {
@@ -40,11 +41,7 @@ function normalizeRates(fx: any): Record<string, number> {
   return { USD: 1 };
 }
 
-function unixToDay(t: number) {
-  return new Date(t * 1000).toISOString().slice(0, 10);
-}
-
-// IMPORTANT: keep NaN as NaN so missing data doesn't become "-100%"
+// keep NaN as NaN (missing data stays missing)
 function normalizeToPct(series: number[]) {
   const firstIdx = series.findIndex((v) => Number.isFinite(v) && v > 0);
   if (firstIdx < 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
@@ -56,7 +53,7 @@ function normalizeToPct(series: number[]) {
   });
 }
 
-// NEW: day-over-day % change at index i (compares to i-1 only)
+// day-over-day % change at index i (i vs i-1)
 function dayOverDayPct(series: number[], i: number) {
   if (i <= 0) return NaN;
   const prev = Number(series[i - 1]);
@@ -127,9 +124,11 @@ export default function PortfolioEditor() {
   const [live, setLive] = useState<any>(null);
   const [snapPoints, setSnapPoints] = useState<SnapPoint[]>([]);
 
-  // chart controls (line only)
+  // chart controls
   const [resolution, setResolution] = useState<"1D" | "1W" | "1M" | "3M" | "1Y" | "ALL">("1M");
   const [normalizeMode, setNormalizeMode] = useState<"pct" | "price">("pct");
+
+  const todayDay = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const holdingsWithUsd: HoldingWithUsd[] = useMemo(() => {
     return holdings.map((h) => {
@@ -184,6 +183,7 @@ export default function PortfolioEditor() {
   }
 
   async function refreshSnapshots() {
+    // keep your current behavior (POST creates a snapshot)
     await fetch("/api/portfolio/snapshot", { method: "POST" });
     const res = await fetch("/api/portfolio/snapshot", { cache: "no-store" });
     const json = await fetchJsonOrThrow(res);
@@ -192,7 +192,7 @@ export default function PortfolioEditor() {
     setSnapPoints(
       pts.map((p: any) => ({
         day: String(p.day),
-        total_usd: Number(p.total_usd ?? 0),
+        total_usd: Number(p.total_usd ?? NaN),
       }))
     );
   }
@@ -260,7 +260,7 @@ export default function PortfolioEditor() {
       setErr("Pick a stock/crypto from the search results.");
       return;
     }
-    const amt = clamp(Number(amount));
+    const amt = clampNonNeg(Number(amount));
     if (amt <= 0) {
       setErr("Enter a valid amount.");
       return;
@@ -320,7 +320,7 @@ export default function PortfolioEditor() {
     }
   }
 
-  // filter portfolio points based on resolution
+  // filter snapshot points based on resolution
   const viewSnapPoints = useMemo(() => {
     if (!snapPoints.length) return [];
     if (resolution === "ALL") return snapPoints;
@@ -347,11 +347,37 @@ export default function PortfolioEditor() {
     });
   }, [snapPoints, resolution]);
 
-  const portfolioRaw = useMemo(() => viewSnapPoints.map((p) => Number(p.total_usd ?? 0)), [viewSnapPoints]);
-  const portfolioPct = useMemo(() => normalizeToPct(portfolioRaw), [portfolioRaw]);
-  const portfolioDays = useMemo(() => viewSnapPoints.map((p) => p.day), [viewSnapPoints]);
+  // Build the series used by the chart:
+  // - sorted ASC
+  // - ensure a "today" point exists and equals totalAmountUsd (updates instantly after edits)
+  const { seriesDays, seriesRaw } = useMemo(() => {
+    const pts = [...viewSnapPoints]
+      .filter((p) => p.day && p.day.length >= 10)
+      .sort((a, b) => a.day.localeCompare(b.day));
 
-  const portfolioY = normalizeMode === "pct" ? portfolioPct : portfolioRaw;
+    const days = pts.map((p) => p.day);
+    const raw = pts.map((p) => Number(p.total_usd));
+
+    if (days.length === 0) {
+      return { seriesDays: [todayDay], seriesRaw: [Number(totalAmountUsd)] };
+    }
+
+    const lastDay = days[days.length - 1];
+    if (lastDay === todayDay) {
+      raw[raw.length - 1] = Number(totalAmountUsd);
+    } else if (todayDay > lastDay) {
+      days.push(todayDay);
+      raw.push(Number(totalAmountUsd));
+    } else {
+      // todayDay is earlier than lastDay (timezone weirdness). Still force last point to live.
+      raw[raw.length - 1] = Number(totalAmountUsd);
+    }
+
+    return { seriesDays: days, seriesRaw: raw };
+  }, [viewSnapPoints, todayDay, totalAmountUsd]);
+
+  const seriesPct = useMemo(() => normalizeToPct(seriesRaw), [seriesRaw]);
+  const seriesY = normalizeMode === "pct" ? seriesPct : seriesRaw;
 
   if (loading) return <div className="text-sm text-[#6B7A74]">Loading…</div>;
 
@@ -441,16 +467,14 @@ export default function PortfolioEditor() {
 
         {/* chart */}
         <div className="mt-3 relative z-0">
-          {viewSnapPoints.length === 0 ? (
+          {seriesDays.length === 0 ? (
             <div className="text-xs text-[#6B7A74]">No history yet.</div>
           ) : (
             <ChartSvg
-              days={portfolioDays}
-              portfolioRaw={portfolioRaw}
-              portfolioY={portfolioY}
+              days={seriesDays}
+              portfolioRaw={seriesRaw}
+              portfolioY={seriesY}
               normalizeMode={normalizeMode}
-              // NEW: pass raw series so tooltip can show day-over-day %
-              rawSeriesForDod={portfolioRaw}
             />
           )}
         </div>
@@ -469,7 +493,9 @@ export default function PortfolioEditor() {
       <div className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-4 py-3">
         <div>
           <div className="text-sm font-semibold">Public portfolio</div>
-          <div className="text-xs text-[#6B7A74]">{isPublic ? "Anyone with the link can view it." : "Only you can view it."}</div>
+          <div className="text-xs text-[#6B7A74]">
+            {isPublic ? "Anyone with the link can view it." : "Only you can view it."}
+          </div>
         </div>
         <button
           type="button"
@@ -556,7 +582,8 @@ export default function PortfolioEditor() {
             >
               <div>
                 <div className="text-sm font-medium">
-                  <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
+                  <span className="font-mono">{h.symbol}</span>{" "}
+                  <span className="text-[#6B7A74]">({h.currency})</span>
                 </div>
                 <div className="text-xs text-[#6B7A74]">{h.amount.toLocaleString()}</div>
               </div>
@@ -591,8 +618,6 @@ function ChartSvg(props: {
   portfolioRaw: number[];
   portfolioY: number[];
   normalizeMode: "pct" | "price";
-  // NEW: raw series used for day-over-day calc (matches days)
-  rawSeriesForDod: number[];
 }) {
   const W = 720;
   const H = 260;
@@ -604,8 +629,7 @@ function ChartSvg(props: {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  const lineLen = props.days.length;
-  const n = Math.max(lineLen, 1);
+  const n = Math.max(props.days.length, 1);
 
   const xAt = (i: number) => {
     if (n <= 1) return PAD_L;
@@ -642,7 +666,7 @@ function ChartSvg(props: {
   const yTicks = useMemo(() => niceTicks(minY, maxY, 5), [minY, maxY]);
 
   const xTickIdxs = useMemo(() => {
-    const len = lineLen;
+    const len = props.days.length;
     if (len <= 1) return [0];
     const target = 4;
     const step = Math.max(1, Math.floor((len - 1) / (target - 1)));
@@ -650,7 +674,7 @@ function ChartSvg(props: {
     for (let i = 0; i < len; i += step) idxs.push(i);
     if (idxs[idxs.length - 1] !== len - 1) idxs.push(len - 1);
     return idxs;
-  }, [lineLen]);
+  }, [props.days.length]);
 
   const rightLabel = (v: number) => (props.normalizeMode === "pct" ? fmtPct(v) : fmtMoney(v));
 
@@ -682,15 +706,14 @@ function ChartSvg(props: {
     return props.days[clampIdx(hoverIdx, props.days.length)] ?? "";
   }, [hoverIdx, props.days]);
 
-  const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : 0;
-  const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : 0;
+  const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : NaN;
+  const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : NaN;
 
-  // NEW: day-over-day percent (always computed from RAW so deletes/adds don’t create “baseline” artifacts)
   const hoverDodPct = useMemo(() => {
     if (hoverIdx == null) return NaN;
-    const idx = clampIdx(hoverIdx, props.rawSeriesForDod.length);
-    return dayOverDayPct(props.rawSeriesForDod, idx);
-  }, [hoverIdx, props.rawSeriesForDod]);
+    const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
+    return dayOverDayPct(props.portfolioRaw, idx);
+  }, [hoverIdx, props.portfolioRaw]);
 
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;
@@ -709,13 +732,9 @@ function ChartSvg(props: {
       {hoverIdx != null ? (
         <div className="pointer-events-none absolute left-3 top-2 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-xs shadow-sm">
           <div className="font-medium">{hoverDay}</div>
-
-          {/* CHANGED: tooltip % is now day-over-day (previous day only) */}
           <div className="text-[#6B7A74]">
             Day: <span className="font-medium">{fmtPct(hoverDodPct)}</span>
           </div>
-
-          {/* keep existing lines */}
           <div className="text-[#6B7A74]">
             {props.normalizeMode === "pct" ? `Series: ${fmtPct(hoverY)}` : `Value: $${fmtMoney(hoverY)}`}
           </div>
@@ -752,14 +771,7 @@ function ChartSvg(props: {
         <path d={pathFor(props.portfolioY)} fill="none" stroke="#0B0F0E" strokeWidth="2" />
 
         {hoverIdx != null ? (
-          <line
-            x1={xAt(hoverIdx)}
-            y1={PAD_T}
-            x2={xAt(hoverIdx)}
-            y2={H - PAD_B}
-            stroke="#9CA3AF"
-            strokeWidth="1"
-          />
+          <line x1={xAt(hoverIdx)} y1={PAD_T} x2={xAt(hoverIdx)} y2={H - PAD_B} stroke="#9CA3AF" strokeWidth="1" />
         ) : null}
       </svg>
     </div>

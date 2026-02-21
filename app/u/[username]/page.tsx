@@ -1,3 +1,4 @@
+// FILE 1: app/u/[username]/page.tsx
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
@@ -51,6 +52,11 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
 
+function pctChange(newV: number, oldV: number) {
+  if (!Number.isFinite(newV) || !Number.isFinite(oldV) || oldV <= 0) return null;
+  return ((newV - oldV) / oldV) * 100;
+}
+
 function buildConicGradient(items: { label: string; value: number; color: string }[]) {
   const total = items.reduce((a, x) => a + x.value, 0);
   if (!total) return { gradient: "conic-gradient(#E6EEE9 0 100%)", rows: [] as any[] };
@@ -73,27 +79,23 @@ function buildConicGradient(items: { label: string; value: number; color: string
 }
 
 function buildLinePoints(values: number[], w: number, h: number, pad = 6) {
-  if (values.length === 0) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (!finite.length) return "";
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
   const span = max - min || 1;
 
   return values
     .map((v, i) => {
+      const vv = Number.isFinite(v) ? v : min;
       const x = pad + (i * (w - pad * 2)) / Math.max(values.length - 1, 1);
-      const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+      const y = pad + (1 - (vv - min) / span) * (h - pad * 2);
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
 }
 
-function Shell({
-  children,
-  title = "Back to feed",
-}: {
-  children: ReactNode;
-  title?: string;
-}) {
+function Shell({ children, title = "Back to feed" }: { children: ReactNode; title?: string }) {
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-2xl space-y-6">
@@ -109,16 +111,7 @@ function Shell({
   );
 }
 
-function pctChange(newV: number, oldV: number) {
-  if (!isFinite(newV) || !isFinite(oldV) || oldV <= 0) return null;
-  return ((newV - oldV) / oldV) * 100;
-}
-
-export default async function PublicProfilePage({
-  params,
-}: {
-  params: Promise<{ username: string }>;
-}) {
+export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const supabase = await createClient();
 
   const { username: raw } = await params;
@@ -169,7 +162,7 @@ export default async function PublicProfilePage({
 
   const isOwner = !!user && user.id === profile.id;
 
-  // Public portfolio
+  // Public portfolio + holdings
   const { data: publicPortfolio } = await supabase
     .from("portfolios")
     .select("id, name, is_public, created_at")
@@ -188,21 +181,21 @@ export default async function PublicProfilePage({
   const holdings = (publicHoldings ?? []) as HoldingRow[];
   const totalAllocation = holdings.reduce((acc, h) => acc + (Number(h.amount) || 0), 0);
 
-  // Snapshots (latest per day) + carry-forward so the line/deltas don't get stuck at 0
+  // Snapshots: latest per day
   const { data: snapRows } = await supabase
     .from("portfolio_snapshots")
     .select("id, created_at, user_id, total_value, currency")
     .eq("user_id", profile.id)
     .order("created_at", { ascending: false })
-    .limit(400);
+    .limit(500);
 
   const byDay = new Map<string, number>();
   for (const r of (snapRows ?? []) as SnapshotRow[]) {
     const k = String(r.created_at).slice(0, 10);
-    if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? 0));
+    if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? NaN));
   }
 
-  // Build last 7 UTC days, but carry-forward the last known value
+  // Last 7 days with carry-forward (keep NaN until we have a real value)
   const today = new Date();
   const lineDays: string[] = [];
   const lineVals: number[] = [];
@@ -214,18 +207,32 @@ export default async function PublicProfilePage({
     lineDays.push(k);
 
     const v = byDay.get(k);
-    if (isFinite(Number(v))) carry = Number(v);
+    if (Number.isFinite(Number(v)) && Number(v) > 0) carry = Number(v);
 
-    lineVals.push(carry ?? 0);
+    lineVals.push(carry ?? NaN);
   }
 
-  // Make "today" live based on the actual current holdings allocation (updates immediately)
-  if (lineVals.length) lineVals[lineVals.length - 1] = totalAllocation;
+  // deltas: last vs first finite, and last vs previous finite
+  const lastIdx = lineVals.length - 1;
+  const lastV = Number(lineVals[lastIdx] ?? NaN);
 
-  const safeUsername = profile.username ?? "unknown";
-  const initial = (safeUsername[0] ?? "?").toUpperCase();
+  const baseIdx = lineVals.findIndex((v) => Number.isFinite(v) && Number(v) > 0);
+  const baseV = baseIdx >= 0 ? Number(lineVals[baseIdx]) : NaN;
 
-  // Pie
+  const prevV = (() => {
+    for (let i = lastIdx - 1; i >= 0; i--) {
+      const v = Number(lineVals[i]);
+      if (Number.isFinite(v) && v > 0) return v;
+    }
+    return NaN;
+  })();
+
+  const delta7Pct = pctChange(lastV, baseV);
+  const delta1Pct = pctChange(lastV, prevV);
+
+  const maxV = Math.max(...lineVals.filter((v) => Number.isFinite(v)), 0);
+
+  // pie
   const pieItems = holdings
     .map((h, i) => ({
       label: String(h.symbol || "").toUpperCase(),
@@ -237,23 +244,14 @@ export default async function PublicProfilePage({
 
   const { gradient, rows: pieRows } = buildConicGradient(pieItems);
 
-  // Line SVG + deltas
+  // line svg
   const W = 520;
   const H = 110;
   const poly = buildLinePoints(lineVals, W, H, 8);
 
-  const lastV = lineVals[lineVals.length - 1] ?? 0;
-  const prevV = lineVals[lineVals.length - 2] ?? 0;
+  const safeUsername = profile.username ?? "unknown";
+  const initial = (safeUsername[0] ?? "?").toUpperCase();
 
-  // For 7D baseline, use the first non-zero value in the series if possible
-  const firstNonZero = lineVals.find((v) => v > 0) ?? 0;
-
-  const delta7Pct = pctChange(lastV, firstNonZero);
-  const delta1Pct = pctChange(lastV, prevV);
-
-  const maxV = Math.max(...lineVals, 0);
-
-  // Posts
   const { data: posts } = await supabase
     .from("posts")
     .select("id, content, created_at")
@@ -363,7 +361,10 @@ export default async function PublicProfilePage({
                         pieRows.slice(0, 6).map((r: any) => (
                           <div key={r.label} className="flex items-center justify-between text-xs">
                             <div className="flex items-center gap-2">
-                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
+                              <span
+                                className="inline-block h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: r.color }}
+                              />
                               <span className="font-medium">{r.label}</span>
                             </div>
                             <span className="text-[#6B7A74]">{clamp(r.pct, 0, 100).toFixed(1)}%</span>
@@ -386,8 +387,8 @@ export default async function PublicProfilePage({
                     <div className="text-xs text-[#6B7A74]">
                       {maxV > 0 ? (
                         <>
-                          {lastV.toLocaleString()}{" "}
-                          (7D {delta7Pct === null ? "—" : `${delta7Pct.toFixed(1)}%`} • 1D{" "}
+                          {Number.isFinite(lastV) ? lastV.toLocaleString() : "—"} (7D{" "}
+                          {delta7Pct === null ? "—" : `${delta7Pct.toFixed(1)}%`} • 1D{" "}
                           {delta1Pct === null ? "—" : `${delta1Pct.toFixed(1)}%`})
                         </>
                       ) : (
