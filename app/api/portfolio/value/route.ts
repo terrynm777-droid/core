@@ -4,31 +4,18 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Snap = {
-  total_usd: number | null;
-};
-
 export async function GET() {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (error || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
-  const { data, error: e } = await supabase
+  const { data } = await supabase
     .from("portfolio_snapshots")
     .select("total_usd")
     .eq("user_id", user.id)
     .order("day", { ascending: false })
-    .limit(2)
-    .returns<Snap[]>();
-
-  if (e) return NextResponse.json({ error: e.message }, { status: 500 });
+    .limit(2);
 
   const today = Number(data?.[0]?.total_usd ?? 0);
   const prev = Number(data?.[1]?.total_usd ?? today);
