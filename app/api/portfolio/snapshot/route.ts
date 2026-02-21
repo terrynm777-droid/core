@@ -1,19 +1,13 @@
-// app/api/portfolio/snapshot/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getUsdBaseRates } from "@/lib/fx";
-import { getLivePrices } from "@/lib/prices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type HoldingRow = {
-  symbol: string;
-  amount: number | null;   // shares
-  currency: string | null; // currency of the quoted price
-};
+type SnapRow = { day: string; total_usd: number | string | null };
 
-function dayKeyUTC(d = new Date()) {
+function dayKeyUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
@@ -22,38 +16,40 @@ function toUsdPerUnit(currency: string, raw: number) {
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   const c = currency.toUpperCase();
   if (c === "USD") return 1;
-  if (raw > 5) return 1 / raw;
+  if (raw > 5) return 1 / raw; // JPY-per-USD style
   return raw;
 }
 
 export async function GET() {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: uerr,
-  } = await supabase.auth.getUser();
-
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
   if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const { data, error } = await supabase
     .from("portfolio_snapshots")
     .select("day,total_usd")
     .eq("user_id", user.id)
-    .order("day", { ascending: true });
+    .order("day", { ascending: true })
+    .limit(800)
+    .returns<any[]>(); // <- bypass stale types
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ points: data ?? [] }, { status: 200 });
+
+  const points = ((data ?? []) as SnapRow[])
+    .map((r) => ({
+      day: String(r.day),
+      total_usd: r.total_usd == null ? null : Number(r.total_usd),
+    }))
+    .filter((p) => p.day && p.day.length >= 10);
+
+  return NextResponse.json({ points }, { status: 200 });
 }
 
 export async function POST() {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: uerr,
-  } = await supabase.auth.getUser();
-
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
   if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const { data: portfolio, error: perr } = await supabase
@@ -67,55 +63,35 @@ export async function POST() {
 
   const { data: holdings, error: herr } = await supabase
     .from("portfolio_holdings")
-    .select("symbol,amount,currency")
+    .select("amount,currency")
     .eq("portfolio_id", portfolio.id)
-    .returns<HoldingRow[]>();
+    .returns<any[]>();
 
   if (herr) return NextResponse.json({ error: herr.message }, { status: 500 });
 
   const hs = (holdings ?? [])
-    .map((h) => ({
-      symbol: String(h.symbol ?? "").trim().toUpperCase(),
+    .map((h: any) => ({
       amount: Number(h.amount ?? 0),
-      currency: String(h.currency ?? "USD").trim().toUpperCase(),
+      currency: String(h.currency ?? "USD").toUpperCase(),
     }))
-    .filter((h) => h.symbol && Number.isFinite(h.amount) && h.amount > 0);
+    .filter((h: any) => Number.isFinite(h.amount) && h.amount > 0);
 
-  if (hs.length === 0) {
-    return NextResponse.json({ ok: true, totalUsd: 0 }, { status: 200 });
-  }
-
-  // 1) live prices (in each holding's quote currency)
-  const symbols = Array.from(new Set(hs.map((h) => h.symbol)));
-  const prices = await getLivePrices(symbols); // Record<symbol, lastPrice>
-
-  // 2) FX rates to convert holding currency -> USD
   const currencies = Array.from(new Set(hs.map((h) => h.currency)));
   const fx = await getUsdBaseRates(currencies);
-  const fxRates: Record<string, number> =
-    fx && typeof (fx as any).rates === "object" ? (fx as any).rates : {};
 
-  // 3) value holdings
-  let totalUsd = 0;
+  const total_usd = hs.reduce((acc: number, h: any) => {
+    const raw = Number((fx as any)?.rates?.[h.currency] ?? (h.currency === "USD" ? 1 : 0));
+    const usdPerUnit = toUsdPerUnit(h.currency, raw);
+    return acc + (usdPerUnit > 0 ? h.amount * usdPerUnit : 0);
+  }, 0);
 
-  for (const h of hs) {
-    const px = Number(prices[h.symbol] ?? 0);
-    if (!Number.isFinite(px) || px <= 0) continue;
-
-    const rawFx = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
-    const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
-    if (usdPerUnit <= 0) continue;
-
-    totalUsd += h.amount * px * usdPerUnit;
-  }
-
-  const day = dayKeyUTC();
+  const day = dayKeyUTC(new Date());
 
   const { error: upErr } = await supabase
     .from("portfolio_snapshots")
-    .upsert({ user_id: user.id, day, total_usd: totalUsd }, { onConflict: "user_id,day" });
+    .upsert({ user_id: user.id, day, total_usd }, { onConflict: "user_id,day" });
 
   if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, totalUsd }, { status: 201 });
+  return NextResponse.json({ ok: true, day, total_usd }, { status: 201 });
 }
