@@ -15,15 +15,16 @@ import { useRouter } from "next/navigation";
  *     symbol: string,
  *     currency: string,
  *     shares: number,
- *     prevClose?: number,
- *     current?: number,
- *     prevUsd?: number,
- *     nowUsd?: number,
- *     dayChangeUsd?: number
+ *     prevClose: number,
+ *     current: number,
+ *     prevUsd: number,
+ *     nowUsd: number,
+ *     dayChangeUsd: number
  *   }>
  * }
  *
- * This UI never re-calculates day % locally. It displays what the API returns.
+ * This UI does NOT recompute daily % locally.
+ * It displays dayChangePct/dayChangeAmount returned by the API.
  */
 
 type SymbolResult = { symbol: string; name: string; type: string };
@@ -32,7 +33,7 @@ type Holding = {
   symbol: string;
   name?: string;
   amount: number; // shares
-  currency: string; // trade currency of the symbol (for saving + display)
+  currency: string; // trade currency (for saving + display)
 };
 
 type SnapPoint = { day: string; total_usd: number };
@@ -41,11 +42,11 @@ type LivePosition = {
   symbol: string;
   currency: string;
   shares: number;
-  prevClose: number; // price
-  current: number; // price
-  prevUsd: number; // USD value at prev close
-  nowUsd: number; // USD value at current
-  dayChangeUsd: number; // USD delta
+  prevClose: number;
+  current: number;
+  prevUsd: number;
+  nowUsd: number;
+  dayChangeUsd: number;
 };
 
 type LiveValue = {
@@ -56,7 +57,6 @@ type LiveValue = {
 };
 
 const CURRENCIES = ["USD", "JPY", "AUD", "HKD", "EUR", "GBP", "CNY", "CAD", "CHF", "SGD"];
-const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
 
 function clampNonNeg(n: number) {
   if (!Number.isFinite(n) || n < 0) return 0;
@@ -133,6 +133,16 @@ function dayOverDayPct(series: number[], i: number) {
   const cur = Number(series[i]);
   if (!Number.isFinite(prev) || !Number.isFinite(cur) || prev <= 0) return NaN;
   return ((cur - prev) / prev) * 100;
+}
+
+/**
+ * Generates visually distinct colors (no repeats within the current list size).
+ * Deterministic by index; if you want stability across reorders, sort your items first.
+ */
+function colorForIndex(i: number) {
+  // golden angle spacing
+  const hue = (i * 137.508) % 360;
+  return `hsl(${hue.toFixed(1)} 70% 45%)`;
 }
 
 function buildConicGradient(items: { color: string; value: number }[], total: number) {
@@ -349,26 +359,34 @@ export default function PortfolioEditor() {
   const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.nowUsd > 0), [live]);
   const totalAmountUsd = useMemo(() => safeNum(live?.totalUsd, 0), [live]);
 
+  // Stable ordering so colors don't reshuffle every render
+  const livePositionsSorted = useMemo(() => {
+    return [...livePositions].sort((a, b) => {
+      const byVal = (b.nowUsd ?? 0) - (a.nowUsd ?? 0);
+      if (byVal !== 0) return byVal;
+      return `${a.symbol}-${a.currency}`.localeCompare(`${b.symbol}-${b.currency}`);
+    });
+  }, [livePositions]);
+
   const pieStyle = useMemo(() => {
-    const items = livePositions.map((p, i) => ({ color: PALETTE[i % PALETTE.length], value: p.nowUsd }));
+    const items = livePositionsSorted.map((p, i) => ({ color: colorForIndex(i), value: p.nowUsd }));
     return buildConicGradient(items, totalAmountUsd);
-  }, [livePositions, totalAmountUsd]);
+  }, [livePositionsSorted, totalAmountUsd]);
 
   const pieLegend = useMemo(() => {
-    if (totalAmountUsd <= 0 || livePositions.length === 0) return [];
-    return livePositions.map((p, i) => {
+    if (totalAmountUsd <= 0 || livePositionsSorted.length === 0) return [];
+    return livePositionsSorted.map((p, i) => {
       const pct = (p.nowUsd / totalAmountUsd) * 100;
       return {
         key: `${p.symbol}-${p.currency}-${i}`,
-        color: PALETTE[i % PALETTE.length],
+        color: colorForIndex(i),
         label: `${p.symbol} (${p.currency})`,
         pct,
         shares: p.shares,
         usdValue: p.nowUsd,
-        dayUsd: p.dayChangeUsd,
       };
     });
-  }, [livePositions, totalAmountUsd]);
+  }, [livePositionsSorted, totalAmountUsd]);
 
   // snapshot view filtering
   const viewSnapPoints = useMemo(() => {
@@ -410,6 +428,7 @@ export default function PortfolioEditor() {
     if (!days.length) return { seriesDays: [todayDay], seriesRaw: [liveTotal] };
 
     const lastDay = days[days.length - 1];
+
     if (lastDay === todayDay) {
       raw[raw.length - 1] = liveTotal;
     } else if (todayDay > lastDay) {
@@ -457,7 +476,7 @@ export default function PortfolioEditor() {
                 <span className="font-mono">{it.label}</span>
               </div>
               <div className="text-[#6B7A74]">
-                {it.pct.toFixed(1)}% • {it.shares.toLocaleString()} • ${fmtMoney(it.usdValue)} • {fmtMoney(it.dayUsd)}
+                {it.pct.toFixed(1)}% • {it.shares.toLocaleString()} • ${fmtMoney(it.usdValue)}
               </div>
             </div>
           ))}
@@ -630,8 +649,7 @@ export default function PortfolioEditor() {
             >
               <div>
                 <div className="text-sm font-medium">
-                  <span className="font-mono">{h.symbol}</span>{" "}
-                  <span className="text-[#6B7A74]">({h.currency})</span>
+                  <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
                 </div>
                 <div className="text-xs text-[#6B7A74]">{h.amount.toLocaleString()} shares</div>
               </div>

@@ -6,8 +6,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 type HoldingRow = {
   id: string;
   symbol: string;
-  amount: number;
-  currency: string | null;
+  amount: number; // shares (stored)
+  currency: string | null; // trade currency (stored)
 };
 
 type PublicSnapPoint = { day: string; total_usd: number };
@@ -29,8 +29,6 @@ type PublicLiveValue = {
   dayChangeAmount: number;
   positions: LivePosition[];
 };
-
-const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155", "#94A3B8"];
 
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
@@ -124,15 +122,33 @@ function safeStr(x: any, fallback = "") {
   return s ? s : fallback;
 }
 
-// stable color per symbol
-function hashColor(symbol: string) {
+// Deterministic, unlimited colors (no palette collisions). Unique per symbol within a render set.
+function fnv1a32(str: string) {
   let h = 2166136261;
-  for (let i = 0; i < symbol.length; i++) {
-    h ^= symbol.charCodeAt(i);
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  const idx = Math.abs(h) % PALETTE.length;
-  return PALETTE[idx];
+  return h >>> 0;
+}
+
+function hslColor(hue: number, sat = 62, light = 46) {
+  const h = ((hue % 360) + 360) % 360;
+  return `hsl(${h} ${sat}% ${light}%)`;
+}
+
+// Assign each label a distinct hue (golden-angle spacing), deterministic per username+labels.
+function assignDistinctColors(labels: string[], seedKey: string) {
+  const uniq = Array.from(new Set(labels.filter(Boolean).map((s) => s.toUpperCase()))).sort((a, b) => a.localeCompare(b));
+  const seed = fnv1a32(seedKey + "::" + uniq.join("|"));
+  const baseHue = seed % 360;
+  const golden = 137.508; // degrees
+  const map: Record<string, string> = {};
+  for (let i = 0; i < uniq.length; i++) {
+    const hue = baseHue + i * golden;
+    map[uniq[i]] = hslColor(hue, 62, 46);
+  }
+  return map;
 }
 
 export default function PublicPortfolioCard(props: {
@@ -177,10 +193,7 @@ export default function PublicPortfolioCard(props: {
           positions,
         };
 
-        // snapshots are ONLY for chart history
-        const snapJson = await fetchJsonOrThrow(
-          `/api/public/portfolio/snapshot?username=${encodeURIComponent(username)}`
-        );
+        const snapJson = await fetchJsonOrThrow(`/api/public/portfolio/snapshot?username=${encodeURIComponent(username)}`);
         const pts = Array.isArray(snapJson?.points) ? snapJson.points : [];
         const nextSnaps = pts.map((p: any) => ({
           day: String(p.day),
@@ -202,10 +215,7 @@ export default function PublicPortfolioCard(props: {
     };
   }, [username]);
 
-  // Build series:
-  // - sort asc
-  // - ensure today exists
-  // - force today == live.totalUsd (so header & chart match)
+  // Build chart series from snapshots; force last point = live.totalUsd
   const { seriesDays, seriesRaw } = useMemo(() => {
     const pts = [...snapPoints]
       .filter((p) => p.day && p.day.length >= 10)
@@ -235,19 +245,25 @@ export default function PublicPortfolioCard(props: {
 
   const seriesPct = useMemo(() => normalizeToPct(seriesRaw), [seriesRaw]);
 
-  // PIE SHOULD BE USD ALLOCATION, NOT SHARES
+  // USD allocation pie (authoritative from live.positions.nowUsd)
+  const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.nowUsd > 0), [live]);
+
+  const colorMap = useMemo(() => {
+    const labels = livePositions.map((p) => p.symbol);
+    return assignDistinctColors(labels, username);
+  }, [livePositions, username]);
+
   const pieItems = useMemo(() => {
-    const ps = (live?.positions ?? []).filter((p) => p.nowUsd > 0);
-    if (!ps.length) return [];
-    return ps
+    if (!livePositions.length) return [];
+    return livePositions
       .slice()
       .sort((a, b) => b.nowUsd - a.nowUsd)
       .map((p) => ({
         label: p.symbol,
         value: p.nowUsd,
-        color: hashColor(p.symbol),
+        color: colorMap[p.symbol] ?? hslColor(fnv1a32(p.symbol) % 360),
       }));
-  }, [live]);
+  }, [livePositions, colorMap]);
 
   const { gradient, rows: pieRows, total: pieTotal } = useMemo(() => buildConicGradient(pieItems), [pieItems]);
 
@@ -261,9 +277,7 @@ export default function PublicPortfolioCard(props: {
 
         <div className="text-right">
           <div className="text-xs text-[#6B7A74]">Total (USD)</div>
-          <div className="text-sm font-semibold">
-            {live && Number.isFinite(live.totalUsd) ? `$${fmtMoney(live.totalUsd)}` : "—"}
-          </div>
+          <div className="text-sm font-semibold">{live && Number.isFinite(live.totalUsd) ? `$${fmtMoney(live.totalUsd)}` : "—"}</div>
           <div className="text-xs text-[#6B7A74]">
             Today{" "}
             <span className={live && Number(live.dayChangePct) >= 0 ? "text-green-600" : "text-red-600"}>
@@ -308,9 +322,7 @@ export default function PublicPortfolioCard(props: {
               ) : (
                 <div className="text-xs text-[#6B7A74]">No positions yet.</div>
               )}
-              {pieRows.length > 6 ? (
-                <div className="text-[11px] text-[#6B7A74]">+ {pieRows.length - 6} more</div>
-              ) : null}
+              {pieRows.length > 6 ? <div className="text-[11px] text-[#6B7A74]">+ {pieRows.length - 6} more</div> : null}
             </div>
           </div>
         </div>
@@ -332,7 +344,7 @@ export default function PublicPortfolioCard(props: {
         </div>
       </div>
 
-      {/* Holdings table (still shows stored holdings list) */}
+      {/* Holdings table (stored list; not used for pie math) */}
       {holdings.length ? (
         <div className="overflow-hidden rounded-2xl border border-[#D7E4DD]">
           <div className="grid grid-cols-3 bg-[#F7FAF8] px-4 py-2 text-xs font-semibold text-[#4B5B55]">
@@ -342,13 +354,20 @@ export default function PublicPortfolioCard(props: {
           </div>
 
           <div className="divide-y divide-[#E6EEE9]">
-            {holdings.map((h) => (
-              <div key={h.id} className="grid grid-cols-3 px-4 py-2 text-sm">
-                <div className="font-medium">{String(h.symbol || "").toUpperCase()}</div>
-                <div className="text-right">{Number(h.amount || 0).toLocaleString()}</div>
-                <div className="text-right text-[#6B7A74]">{h.currency || "—"}</div>
-              </div>
-            ))}
+            {holdings.map((h) => {
+              const sym = String(h.symbol || "").toUpperCase();
+              const dot = colorMap[sym];
+              return (
+                <div key={h.id} className="grid grid-cols-3 px-4 py-2 text-sm">
+                  <div className="font-medium flex items-center gap-2">
+                    {dot ? <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dot }} /> : null}
+                    {sym}
+                  </div>
+                  <div className="text-right">{Number(h.amount || 0).toLocaleString()}</div>
+                  <div className="text-right text-[#6B7A74]">{h.currency || "—"}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -447,7 +466,7 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
   const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : NaN;
   const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : NaN;
 
-  // KEY FIX: last point uses authoritative live.dayChangePct
+  // last point uses authoritative live.dayChangePct
   const hoverDodPct = useMemo(() => {
     if (hoverIdx == null) return NaN;
     const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
