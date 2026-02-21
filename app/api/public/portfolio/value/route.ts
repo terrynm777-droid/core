@@ -6,11 +6,7 @@ import { getLiveQuotes } from "@/lib/prices";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type HoldingRow = {
-  symbol: string | null;
-  amount: number | string | null; // SHARES
-  currency: string | null;        // trading currency for symbol
-};
+type HoldingRow = { symbol: string | null; amount: number | string | null; currency: string | null };
 
 type Holding = {
   symbol: string;
@@ -18,29 +14,29 @@ type Holding = {
   currency: string;
 };
 
-type Quote = {
-  c: number;  // current
-  pc: number; // previous close
-};
+type SnapRow = { day: string; total_usd: number | null };
 
-function safeNum(x: unknown, fallback = 0) {
+function safeNum(x: any, fallback = 0) {
   const n = Number(x);
   return Number.isFinite(n) ? n : fallback;
 }
-
-function safeStr(x: unknown, fallback = "") {
+function safeStr(x: any, fallback = "") {
   const s = String(x ?? "").trim();
   return s ? s : fallback;
 }
 
-// returns USD per 1 unit of currency
+// Returns USD per 1 unit of currency.
+// NOTE: kept your heuristic because your fx provider shape/quote direction is unknown.
 function toUsdPerUnit(currency: string, raw: number) {
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
   const c = currency.toUpperCase();
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
   if (c === "USD") return 1;
-  // heuristic: if looks like JPY-per-USD, invert
-  if (raw > 5) return 1 / raw;
-  return raw;
+  if (raw > 5) return 1 / raw; // likely JPY-per-USD style
+  return raw; // likely USD-per-unit
+}
+
+function todayUtcDay() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export async function GET(req: Request) {
@@ -48,90 +44,117 @@ export async function GET(req: Request) {
   const username = searchParams.get("username");
   if (!username) return NextResponse.json({ error: "Missing username" }, { status: 400 });
 
+  // If this is missing on Vercel, your public page will show 0s or fail silently elsewhere.
+  if (!process.env.FINNHUB_API_KEY) {
+    return NextResponse.json(
+      { error: "Missing FINNHUB_API_KEY env var" },
+      { status: 500 }
+    );
+  }
+
   const supabase = await createClient();
 
-  const { data: profile, error: perr } = await supabase
+  const { data: profile } = await supabase
     .from("profiles")
     .select("id")
     .eq("username", username)
     .maybeSingle();
 
-  if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
   if (!profile?.id) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
-  const { data: portfolio, error: poerr } = await supabase
+  const { data: portfolio } = await supabase
     .from("portfolios")
-    .select("id, is_public")
+    .select("id,is_public")
     .eq("user_id", profile.id)
     .maybeSingle();
 
-  if (poerr) return NextResponse.json({ error: poerr.message }, { status: 500 });
   if (!portfolio?.id || !portfolio.is_public) {
     return NextResponse.json({ error: "Portfolio not public" }, { status: 403 });
   }
 
-  const { data: rows, error: herr } = await supabase
+  const { data: rows } = await supabase
     .from("portfolio_holdings")
-    .select("symbol, amount, currency")
+    .select("symbol,amount,currency")
     .eq("portfolio_id", portfolio.id)
     .returns<HoldingRow[]>();
 
-  if (herr) return NextResponse.json({ error: herr.message }, { status: 500 });
-
-  const hs: Holding[] = (rows ?? [])
-    .map((r: HoldingRow): Holding => ({
+  const holdings: Holding[] = (rows ?? [])
+    .map((r): Holding => ({
       symbol: safeStr(r.symbol).toUpperCase(),
       shares: safeNum(r.amount, 0),
       currency: safeStr(r.currency, "USD").toUpperCase(),
     }))
-    .filter((h: Holding) => Boolean(h.symbol) && Number.isFinite(h.shares) && h.shares > 0);
+    .filter((h) => Boolean(h.symbol) && Number.isFinite(h.shares) && h.shares > 0);
 
-  if (!hs.length) {
-    return NextResponse.json({ totalUsd: 0, dayChangeAmount: 0, dayChangePct: 0, positions: [] });
+  if (holdings.length === 0) {
+    return NextResponse.json({
+      totalUsd: 0,
+      dayChangeAmount: 0,
+      dayChangePct: 0,
+      positions: [],
+    });
   }
 
-  const symbols = Array.from(new Set(hs.map((h: Holding) => h.symbol)));
-  const currencies = Array.from(new Set(hs.map((h: Holding) => h.currency)));
+  const symbols = Array.from(new Set(holdings.map((h) => h.symbol)));
+  const currencies = Array.from(new Set(holdings.map((h) => h.currency)));
 
-  const [quotesRaw, fxRaw] = await Promise.all([getLiveQuotes(symbols), getUsdBaseRates(currencies)]);
-  const fxRates: Record<string, number> = (fxRaw as any)?.rates ?? {};
+  const [quotes, fxRaw] = await Promise.all([
+    getLiveQuotes(symbols),
+    getUsdBaseRates(currencies),
+  ]);
 
-  // normalize quotes -> {symbol: {c, pc}}
-  const quotes: Record<string, Quote> = {};
-  for (const sym of symbols) {
-    const q: any = (quotesRaw as any)?.[sym];
-    quotes[sym] = { c: safeNum(q?.c, 0), pc: safeNum(q?.pc, 0) };
-  }
+  const fxRates: Record<string, number> =
+    (fxRaw as any)?.rates && typeof (fxRaw as any)?.rates === "object"
+      ? (fxRaw as any).rates
+      : (fxRaw as any) && typeof fxRaw === "object"
+        ? (fxRaw as any)
+        : {};
 
-  const positions = hs.map((h) => {
-    const q = quotes[h.symbol] ?? { c: 0, pc: 0 };
+  const positions = holdings
+    .map((h) => {
+      const price = safeNum((quotes as any)?.[h.symbol], 0);
+      const rawFx = safeNum(fxRates[h.currency], h.currency === "USD" ? 1 : 0);
+      const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
+      const usdValue =
+        price > 0 && usdPerUnit > 0 ? h.shares * price * usdPerUnit : 0;
 
-    const rawFx = safeNum(fxRates[h.currency], h.currency === "USD" ? 1 : 0);
-    const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
+      return {
+        symbol: h.symbol,
+        currency: h.currency,
+        shares: h.shares,
+        price,
+        usdValue,
+      };
+    })
+    .filter((p) => p.usdValue > 0);
 
-    const prevUsd = q.pc > 0 ? h.shares * q.pc * usdPerUnit : 0;
-    const nowUsd = q.c > 0 ? h.shares * q.c * usdPerUnit : 0;
+  const totalUsd = positions.reduce((a, p) => a + p.usdValue, 0);
 
-    return {
-      symbol: h.symbol,
-      currency: h.currency,
-      shares: h.shares,
-      prevClose: q.pc,
-      current: q.c,
-      prevUsd,
-      nowUsd,
-      dayChangeUsd: nowUsd - prevUsd,
-    };
-  });
+  // Correct day-over-day:
+  // - if a snapshot exists for today, compare against the most recent snapshot BEFORE today
+  // - else compare against the most recent snapshot (yesterday/previous)
+  const { data: snaps } = await supabase
+    .from("portfolio_snapshots")
+    .select("day,total_usd")
+    .eq("user_id", profile.id)
+    .order("day", { ascending: false })
+    .limit(2)
+    .returns<SnapRow[]>();
 
-  const prevTotal = positions.reduce((a, p) => a + safeNum(p.prevUsd, 0), 0);
-  const nowTotal = positions.reduce((a, p) => a + safeNum(p.nowUsd, 0), 0);
+  const tday = todayUtcDay();
+  const s0 = snaps?.[0];
+  const s1 = snaps?.[1];
 
-  const diff = nowTotal - prevTotal;
-  const pct = prevTotal > 0 ? (diff / prevTotal) * 100 : 0;
+  const prev =
+    s0?.day === tday
+      ? safeNum(s1?.total_usd, safeNum(s0?.total_usd, totalUsd))
+      : safeNum(s0?.total_usd, totalUsd);
+
+  const diff = totalUsd - prev;
+  const pct = prev > 0 ? (diff / prev) * 100 : 0;
 
   return NextResponse.json({
-    totalUsd: nowTotal,
+    totalUsd,
     dayChangeAmount: diff,
     dayChangePct: pct,
     positions,

@@ -1,103 +1,52 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getUsdBaseRates } from "@/lib/fx";
+import { getLiveQuotes } from "@/lib/prices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type HoldingRow = {
-  symbol: string | null;
-  amount: number | string | null; // IMPORTANT: this is NOTIONAL value at previous close
-  currency: string | null;
-};
+type HoldingRow = { symbol: string | null; amount: number | string | null; currency: string | null };
+type Holding = { symbol: string; shares: number; currency: string };
+type SnapRow = { day: string; total_usd: number | null };
 
-type Holding = {
-  symbol: string;    // e.g. AAPL
-  notional: number;  // yesterday value in its currency
-  currency: string;  // e.g. USD, AUD
-};
-
-type FinnQuote = {
-  c: number;   // current
-  pc: number;  // previous close
-};
-
-function safeNum(x: unknown, fallback = 0) {
+function safeNum(x: any, fallback = 0) {
   const n = Number(x);
   return Number.isFinite(n) ? n : fallback;
 }
-
-function safeStr(x: unknown, fallback = "") {
+function safeStr(x: any, fallback = "") {
   const s = String(x ?? "").trim();
   return s ? s : fallback;
 }
 
-// returns USD per 1 unit of currency
 function toUsdPerUnit(currency: string, raw: number) {
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
   const c = currency.toUpperCase();
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
   if (c === "USD") return 1;
-  // if quote looks like JPY-per-USD, invert it
   if (raw > 5) return 1 / raw;
   return raw;
 }
 
-async function getFinnhubQuotes(symbols: string[]): Promise<Record<string, FinnQuote>> {
-  const key = process.env.FINNHUB_API_KEY;
-  if (!key) throw new Error("Missing FINNHUB_API_KEY");
-
-  const out: Record<string, FinnQuote> = {};
-
-  await Promise.all(
-    symbols.map(async (sym) => {
-      const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`;
-      const res = await fetch(url, { cache: "no-store" });
-      const j: any = await res.json().catch(() => null);
-
-      out[sym] = {
-        c: safeNum(j?.c, 0),
-        pc: safeNum(j?.pc, 0),
-      };
-    })
-  );
-
-  return out;
+function todayUtcDay() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export async function GET() {
+  if (!process.env.FINNHUB_API_KEY) {
+    return NextResponse.json({ error: "Missing FINNHUB_API_KEY env var" }, { status: 500 });
+  }
+
   const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const { data: portfolio, error: perr } = await supabase
+  const { data: portfolio } = await supabase
     .from("portfolios")
     .select("id")
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (perr || !portfolio?.id) return NextResponse.json({ error: "Portfolio missing" }, { status: 500 });
-
-  const { data: rows, error: herr } = await supabase
-    .from("portfolio_holdings")
-    .select("symbol,amount,currency")
-    .eq("portfolio_id", portfolio.id)
-    .returns<HoldingRow[]>();
-
-  if (herr) return NextResponse.json({ error: herr.message }, { status: 500 });
-
-  const hs: Holding[] = (rows ?? [])
-    .map((r: HoldingRow): Holding => ({
-      symbol: safeStr(r.symbol).toUpperCase(),
-      notional: safeNum(r.amount, 0),
-      currency: safeStr(r.currency, "USD").toUpperCase(),
-    }))
-    .filter((h: Holding) => Boolean(h.symbol) && Number.isFinite(h.notional) && h.notional > 0);
-
-  if (!hs.length) {
+  if (!portfolio?.id) {
     return NextResponse.json({
       totalUsd: 0,
       dayChangeAmount: 0,
@@ -106,59 +55,86 @@ export async function GET() {
     });
   }
 
-  const symbols = Array.from(new Set(hs.map((h: Holding) => h.symbol)));
-  const currencies = Array.from(new Set(hs.map((h: Holding) => h.currency)));
+  const { data: rows } = await supabase
+    .from("portfolio_holdings")
+    .select("symbol,amount,currency")
+    .eq("portfolio_id", portfolio.id)
+    .returns<HoldingRow[]>();
+
+  const holdings: Holding[] = (rows ?? [])
+    .map((r): Holding => ({
+      symbol: safeStr(r.symbol).toUpperCase(),
+      shares: safeNum(r.amount, 0),
+      currency: safeStr(r.currency, "USD").toUpperCase(),
+    }))
+    .filter((h) => Boolean(h.symbol) && Number.isFinite(h.shares) && h.shares > 0);
+
+  if (!holdings.length) {
+    return NextResponse.json({
+      totalUsd: 0,
+      dayChangeAmount: 0,
+      dayChangePct: 0,
+      positions: [],
+    });
+  }
+
+  const symbols = Array.from(new Set(holdings.map((h) => h.symbol)));
+  const currencies = Array.from(new Set(holdings.map((h) => h.currency)));
 
   const [quotes, fxRaw] = await Promise.all([
-    getFinnhubQuotes(symbols),
+    getLiveQuotes(symbols),
     getUsdBaseRates(currencies),
   ]);
 
-  const fxRates: Record<string, number> = (fxRaw as any)?.rates ?? {};
+  const fxRates: Record<string, number> =
+    (fxRaw as any)?.rates && typeof (fxRaw as any)?.rates === "object"
+      ? (fxRaw as any).rates
+      : (fxRaw as any) && typeof fxRaw === "object"
+        ? (fxRaw as any)
+        : {};
 
-  type Position = {
-    symbol: string;
-    currency: string;
-    prevClose: number;     // pc
-    current: number;       // c
-    prevValueUsd: number;  // yesterday notional in USD
-    todayValueUsd: number; // today value in USD
-    dayChangeUsd: number;  // delta in USD
-  };
+  const positions = holdings
+    .map((h) => {
+      const price = safeNum((quotes as any)?.[h.symbol], 0);
+      const rawFx = safeNum(fxRates[h.currency], h.currency === "USD" ? 1 : 0);
+      const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
+      const usdValue =
+        price > 0 && usdPerUnit > 0 ? h.shares * price * usdPerUnit : 0;
 
-  const positions: Position[] = hs.map((h: Holding) => {
-    const q = quotes[h.symbol] ?? { c: 0, pc: 0 };
+      return {
+        symbol: h.symbol,
+        currency: h.currency,
+        shares: h.shares,
+        price,
+        usdValue,
+      };
+    })
+    .filter((p) => p.usdValue > 0);
 
-    const rawFx = safeNum(fxRates[h.currency], h.currency === "USD" ? 1 : 0);
-    const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
+  const totalUsd = positions.reduce((a, p) => a + p.usdValue, 0);
 
-    const prevValueUsd = h.notional * usdPerUnit;
+  const { data: snaps } = await supabase
+    .from("portfolio_snapshots")
+    .select("day,total_usd")
+    .eq("user_id", user.id)
+    .order("day", { ascending: false })
+    .limit(2)
+    .returns<SnapRow[]>();
 
-    // If Finnhub missing pc, treat no move (avoid division by 0)
-    const ratio = q.pc > 0 ? q.c / q.pc : 1;
+  const tday = todayUtcDay();
+  const s0 = snaps?.[0];
+  const s1 = snaps?.[1];
 
-    const todayNotional = h.notional * ratio;
-    const todayValueUsd = todayNotional * usdPerUnit;
+  const prev =
+    s0?.day === tday
+      ? safeNum(s1?.total_usd, safeNum(s0?.total_usd, totalUsd))
+      : safeNum(s0?.total_usd, totalUsd);
 
-    return {
-      symbol: h.symbol,
-      currency: h.currency,
-      prevClose: q.pc,
-      current: q.c,
-      prevValueUsd,
-      todayValueUsd,
-      dayChangeUsd: todayValueUsd - prevValueUsd,
-    };
-  });
-
-  const prevTotal = positions.reduce((a, p) => a + p.prevValueUsd, 0);
-  const todayTotal = positions.reduce((a, p) => a + p.todayValueUsd, 0);
-
-  const diff = todayTotal - prevTotal;
-  const pct = prevTotal > 0 ? (diff / prevTotal) * 100 : 0;
+  const diff = totalUsd - prev;
+  const pct = prev > 0 ? (diff / prev) * 100 : 0;
 
   return NextResponse.json({
-    totalUsd: todayTotal,
+    totalUsd,
     dayChangeAmount: diff,
     dayChangePct: pct,
     positions,
