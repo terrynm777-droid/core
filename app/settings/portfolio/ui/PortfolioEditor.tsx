@@ -1,8 +1,30 @@
-// FILE 2: app/settings/portfolio/ui/PortfolioEditor.tsx
+// app/settings/portfolio/ui/PortfolioEditor.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+/**
+ * REQUIREMENT FOR THIS FILE TO SHOW CORRECT DAILY %:
+ * /api/portfolio/value MUST return:
+ * {
+ *   totalUsd: number,
+ *   dayChangePct: number,
+ *   dayChangeAmount: number,
+ *   positions: Array<{
+ *     symbol: string,
+ *     currency: string,
+ *     shares: number,
+ *     prevClose?: number,
+ *     current?: number,
+ *     prevUsd?: number,
+ *     nowUsd?: number,
+ *     dayChangeUsd?: number
+ *   }>
+ * }
+ *
+ * This UI never re-calculates day % locally. It displays what the API returns.
+ */
 
 type SymbolResult = { symbol: string; name: string; type: string };
 
@@ -10,7 +32,7 @@ type Holding = {
   symbol: string;
   name?: string;
   amount: number; // shares
-  currency: string; // trade currency for the symbol (used for FX conversion)
+  currency: string; // trade currency of the symbol (for saving + display)
 };
 
 type SnapPoint = { day: string; total_usd: number };
@@ -19,8 +41,11 @@ type LivePosition = {
   symbol: string;
   currency: string;
   shares: number;
-  price: number;
-  usdValue: number;
+  prevClose: number; // price
+  current: number; // price
+  prevUsd: number; // USD value at prev close
+  nowUsd: number; // USD value at current
+  dayChangeUsd: number; // USD delta
 };
 
 type LiveValue = {
@@ -36,25 +61,6 @@ const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155
 function clampNonNeg(n: number) {
   if (!Number.isFinite(n) || n < 0) return 0;
   return n;
-}
-
-function normalizeToPct(series: number[]) {
-  const firstIdx = series.findIndex((v) => Number.isFinite(v) && v > 0);
-  if (firstIdx < 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
-  const base = series[firstIdx];
-  if (!Number.isFinite(base) || base <= 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
-  return series.map((v) => {
-    if (!Number.isFinite(v)) return NaN;
-    return ((Number(v) - base) / base) * 100;
-  });
-}
-
-function dayOverDayPct(series: number[], i: number) {
-  if (i <= 0) return NaN;
-  const prev = Number(series[i - 1]);
-  const cur = Number(series[i]);
-  if (!Number.isFinite(prev) || !Number.isFinite(cur) || prev <= 0) return NaN;
-  return ((cur - prev) / prev) * 100;
 }
 
 function clampIdx(i: number, n: number) {
@@ -94,12 +100,6 @@ async function fetchJsonOrThrow(res: Response) {
   return json;
 }
 
-function sortAsc(points: SnapPoint[]) {
-  return [...points]
-    .filter((p) => p.day && p.day.length >= 10)
-    .sort((a, b) => a.day.localeCompare(b.day));
-}
-
 function safeNum(x: any, fallback = 0) {
   const n = Number(x);
   return Number.isFinite(n) ? n : fallback;
@@ -110,19 +110,44 @@ function safeStr(x: any, fallback = "") {
   return s ? s : fallback;
 }
 
-function buildConicGradient(items: { color: string; value: number }[], total: number) {
-  if (total <= 0 || items.length === 0) return { backgroundImage: "conic-gradient(#D7E4DD 0 100%)" } as any;
+function sortAsc(points: SnapPoint[]) {
+  return [...points]
+    .filter((p) => p.day && p.day.length >= 10)
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
 
+function normalizeToPct(series: number[]) {
+  const firstIdx = series.findIndex((v) => Number.isFinite(v) && v > 0);
+  if (firstIdx < 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
+  const base = series[firstIdx];
+  if (!Number.isFinite(base) || base <= 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
+  return series.map((v) => {
+    if (!Number.isFinite(v)) return NaN;
+    return ((Number(v) - base) / base) * 100;
+  });
+}
+
+function dayOverDayPct(series: number[], i: number) {
+  if (i <= 0) return NaN;
+  const prev = Number(series[i - 1]);
+  const cur = Number(series[i]);
+  if (!Number.isFinite(prev) || !Number.isFinite(cur) || prev <= 0) return NaN;
+  return ((cur - prev) / prev) * 100;
+}
+
+function buildConicGradient(items: { color: string; value: number }[], total: number) {
+  if (total <= 0 || items.length === 0) {
+    return { backgroundImage: "conic-gradient(#D7E4DD 0 100%)" } as any;
+  }
   let acc = 0;
   const segs: string[] = [];
-  items.forEach((it) => {
+  for (const it of items) {
     const w = (it.value / total) * 100;
     const start = acc;
     const end = acc + w;
     acc = end;
     segs.push(`${it.color} ${start}% ${end}%`);
-  });
-
+  }
   return { backgroundImage: `conic-gradient(${segs.join(",")})` } as any;
 }
 
@@ -135,7 +160,7 @@ export default function PortfolioEditor() {
   const [name, setName] = useState("My Portfolio");
   const [isPublic, setIsPublic] = useState(false);
 
-  // Stored holdings are just for editing + saving (shares + currency)
+  // Stored holdings are for editing/saving only
   const [holdings, setHoldings] = useState<Holding[]>([]);
 
   // add holding flow
@@ -148,8 +173,10 @@ export default function PortfolioEditor() {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // live + snapshots
+  // live value (authoritative daily %)
   const [live, setLive] = useState<LiveValue | null>(null);
+
+  // snapshots for performance chart
   const [snapPoints, setSnapPoints] = useState<SnapPoint[]>([]);
 
   // chart controls
@@ -167,8 +194,11 @@ export default function PortfolioEditor() {
           symbol: safeStr(p?.symbol).toUpperCase(),
           currency: safeStr(p?.currency, "USD").toUpperCase(),
           shares: safeNum(p?.shares, 0),
-          price: safeNum(p?.price, 0),
-          usdValue: safeNum(p?.usdValue, 0),
+          prevClose: safeNum(p?.prevClose, 0),
+          current: safeNum(p?.current, 0),
+          prevUsd: safeNum(p?.prevUsd, 0),
+          nowUsd: safeNum(p?.nowUsd, 0),
+          dayChangeUsd: safeNum(p?.dayChangeUsd, 0),
         }))
       : [];
 
@@ -251,6 +281,7 @@ export default function PortfolioEditor() {
       setErr("Pick a stock/crypto from the search results.");
       return;
     }
+
     const amt = clampNonNeg(Number(amount));
     if (amt <= 0) {
       setErr("Enter a valid amount.");
@@ -300,7 +331,7 @@ export default function PortfolioEditor() {
       });
       await fetchJsonOrThrow(putRes);
 
-      // Create ONE snapshot after saving
+      // create one snapshot after saving
       await fetch("/api/portfolio/snapshot", { method: "POST" }).catch(() => {});
 
       setOk("Saved.");
@@ -314,32 +345,32 @@ export default function PortfolioEditor() {
     }
   }
 
-  // ----- LIVE positions drive the pie + total (NOT the raw holdings inputs) -----
-  const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.usdValue > 0), [live]);
-
+  // LIVE positions drive pie + totals (not stored holdings)
+  const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.nowUsd > 0), [live]);
   const totalAmountUsd = useMemo(() => safeNum(live?.totalUsd, 0), [live]);
 
   const pieStyle = useMemo(() => {
-    const items = livePositions.map((p, i) => ({ color: PALETTE[i % PALETTE.length], value: p.usdValue }));
+    const items = livePositions.map((p, i) => ({ color: PALETTE[i % PALETTE.length], value: p.nowUsd }));
     return buildConicGradient(items, totalAmountUsd);
   }, [livePositions, totalAmountUsd]);
 
   const pieLegend = useMemo(() => {
     if (totalAmountUsd <= 0 || livePositions.length === 0) return [];
     return livePositions.map((p, i) => {
-      const pct = (p.usdValue / totalAmountUsd) * 100;
+      const pct = (p.nowUsd / totalAmountUsd) * 100;
       return {
         key: `${p.symbol}-${p.currency}-${i}`,
         color: PALETTE[i % PALETTE.length],
         label: `${p.symbol} (${p.currency})`,
         pct,
         shares: p.shares,
-        usdValue: p.usdValue,
+        usdValue: p.nowUsd,
+        dayUsd: p.dayChangeUsd,
       };
     });
   }, [livePositions, totalAmountUsd]);
 
-  // filter snapshot points based on resolution
+  // snapshot view filtering
   const viewSnapPoints = useMemo(() => {
     if (!snapPoints.length) return [];
     if (resolution === "ALL") return sortAsc(snapPoints);
@@ -368,24 +399,17 @@ export default function PortfolioEditor() {
     );
   }, [snapPoints, resolution]);
 
-  // Build series for chart:
-  // - sorted asc
-  // - ensure today exists
-  // - force today == live.totalUsd so chart matches header
+  // chart series: force last point to equal live.totalUsd so chart matches header total
   const { seriesDays, seriesRaw } = useMemo(() => {
     const pts = viewSnapPoints;
-
     const days = pts.map((p) => p.day);
     const raw = pts.map((p) => safeNum(p.total_usd, NaN));
 
     const liveTotal = totalAmountUsd;
 
-    if (!days.length) {
-      return { seriesDays: [todayDay], seriesRaw: [liveTotal] };
-    }
+    if (!days.length) return { seriesDays: [todayDay], seriesRaw: [liveTotal] };
 
     const lastDay = days[days.length - 1];
-
     if (lastDay === todayDay) {
       raw[raw.length - 1] = liveTotal;
     } else if (todayDay > lastDay) {
@@ -423,7 +447,7 @@ export default function PortfolioEditor() {
         </div>
       </div>
 
-      {/* Legend for pie */}
+      {/* Legend */}
       {pieLegend.length > 0 ? (
         <div className="grid grid-cols-1 gap-2">
           {pieLegend.map((it) => (
@@ -433,7 +457,7 @@ export default function PortfolioEditor() {
                 <span className="font-mono">{it.label}</span>
               </div>
               <div className="text-[#6B7A74]">
-                {it.pct.toFixed(1)}% • {it.shares.toLocaleString()} • ${fmtMoney(it.usdValue)}
+                {it.pct.toFixed(1)}% • {it.shares.toLocaleString()} • ${fmtMoney(it.usdValue)} • {fmtMoney(it.dayUsd)}
               </div>
             </div>
           ))}
@@ -447,7 +471,6 @@ export default function PortfolioEditor() {
           <div className="text-xs text-[#6B7A74]">Line</div>
         </div>
 
-        {/* controls */}
         <div className="mt-3 grid grid-cols-12 gap-2">
           <select
             value={resolution}
@@ -488,7 +511,6 @@ export default function PortfolioEditor() {
           </button>
         </div>
 
-        {/* chart */}
         <div className="mt-3 relative z-0">
           {seriesDays.length === 0 ? (
             <div className="text-xs text-[#6B7A74]">No history yet.</div>
@@ -592,12 +614,10 @@ export default function PortfolioEditor() {
           </button>
         </div>
 
-        <div className="text-xs text-[#6B7A74]">
-          Shares are stored. Live value comes from Finnhub quote × FX.
-        </div>
+        <div className="text-xs text-[#6B7A74]">Shares are stored. Daily % comes from API (prev close vs current).</div>
       </div>
 
-      {/* Holdings list (editing view) */}
+      {/* Holdings list */}
       <div className="space-y-2">
         <div className="text-sm font-semibold">Holdings</div>
         {holdings.length === 0 ? (
@@ -738,7 +758,9 @@ function ChartSvg(props: {
   const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : NaN;
   const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : NaN;
 
-  // If hovering the last (today) point, show LIVE dayChangePct so it matches header.
+  // Tooltip day%:
+  // - For the last point (today), show live.dayChangePct (authoritative).
+  // - Otherwise compute day-over-day from snapshot series.
   const hoverDodPct = useMemo(() => {
     if (hoverIdx == null) return NaN;
     const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
