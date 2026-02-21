@@ -1,33 +1,47 @@
 // lib/prices.ts
-export type Quote = {
-  symbol: string;
-  price: number; // last/close price
-  currency: string; // quote currency, usually "USD" for US stocks
-};
+type Quote = { price: number; prevClose: number };
 
-const FINNHUB = "https://finnhub.io/api/v1";
+const TTL_MS = 15_000;
+const cache = new Map<string, { at: number; q: Quote }>();
 
-export async function getQuotes(symbols: string[]): Promise<Record<string, Quote>> {
-  const token = process.env.FINNHUB_API_KEY;
-  if (!token) throw new Error("Missing FINNHUB_API_KEY");
+function normSym(s: string) {
+  return String(s || "").trim().toUpperCase();
+}
 
-  const uniq = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()))).filter(Boolean);
+export async function getLiveQuotes(symbols: string[]): Promise<Record<string, Quote>> {
+  const key = process.env.FINNHUB_API_KEY;
+  if (!key) throw new Error("Missing FINNHUB_API_KEY");
+
+  const uniq = Array.from(new Set(symbols.map(normSym))).filter(Boolean);
   const out: Record<string, Quote> = {};
 
-  // Finnhub is 1 symbol per request for quote.
-  // Keep it simple; you can batch/parallelize later.
-  for (const symbol of uniq) {
-    const url = `${FINNHUB}/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(token)}`;
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) continue;
-    const q = (await res.json()) as any;
+  const now = Date.now();
+  const need: string[] = [];
 
-    // finnhub: c=current, pc=prev close
-    const price = Number(q?.c ?? 0);
-    if (!Number.isFinite(price) || price <= 0) continue;
-
-    out[symbol] = { symbol, price, currency: "USD" };
+  for (const sym of uniq) {
+    const hit = cache.get(sym);
+    if (hit && now - hit.at < TTL_MS) {
+      out[sym] = hit.q;
+    } else {
+      need.push(sym);
+    }
   }
+
+  await Promise.all(
+    need.map(async (sym) => {
+      const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Finnhub quote failed for ${sym}: ${res.status}`);
+      const j = (await res.json()) as any;
+
+      const price = Number(j?.c ?? 0);      // current
+      const prevClose = Number(j?.pc ?? 0); // previous close
+
+      const q = { price: Number.isFinite(price) ? price : 0, prevClose: Number.isFinite(prevClose) ? prevClose : 0 };
+      cache.set(sym, { at: Date.now(), q });
+      out[sym] = q;
+    })
+  );
 
   return out;
 }
