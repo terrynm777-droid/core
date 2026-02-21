@@ -17,6 +17,12 @@ type Holding = {
 type HoldingWithUsd = Holding & { usdAmount: number };
 type SnapPoint = { day: string; total_usd: number };
 
+type LiveValue = {
+  totalUsd?: number;
+  dayChangePct?: number;
+  dayChangeAmount?: number;
+};
+
 const CURRENCIES = ["USD", "JPY", "AUD", "HKD", "EUR", "GBP", "CNY", "CAD", "CHF", "SGD"];
 const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
 
@@ -25,11 +31,12 @@ function clampNonNeg(n: number) {
   return n;
 }
 
+// FX helper: returns USD per 1 unit of currency
 function toUsdPerUnit(currency: string, raw: number) {
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   const c = currency.toUpperCase();
   if (c === "USD") return 1;
-  // crude heuristic: if quote looks like JPY per USD, invert it
+  // crude heuristic: if quote looks like JPY-per-USD, invert it
   if (raw > 5) return 1 / raw;
   return raw;
 }
@@ -41,7 +48,6 @@ function normalizeRates(fx: any): Record<string, number> {
   return { USD: 1 };
 }
 
-// keep NaN as NaN (missing data stays missing)
 function normalizeToPct(series: number[]) {
   const firstIdx = series.findIndex((v) => Number.isFinite(v) && v > 0);
   if (firstIdx < 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
@@ -53,7 +59,6 @@ function normalizeToPct(series: number[]) {
   });
 }
 
-// day-over-day % change at index i (i vs i-1)
 function dayOverDayPct(series: number[], i: number) {
   if (i <= 0) return NaN;
   const prev = Number(series[i - 1]);
@@ -99,6 +104,12 @@ async function fetchJsonOrThrow(res: Response) {
   return json;
 }
 
+function sortAsc(points: SnapPoint[]) {
+  return [...points]
+    .filter((p) => p.day && p.day.length >= 10)
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
 export default function PortfolioEditor() {
   const router = useRouter();
 
@@ -121,7 +132,7 @@ export default function PortfolioEditor() {
   const [ok, setOk] = useState<string | null>(null);
 
   // live + snapshots
-  const [live, setLive] = useState<any>(null);
+  const [live, setLive] = useState<LiveValue | null>(null);
   const [snapPoints, setSnapPoints] = useState<SnapPoint[]>([]);
 
   // chart controls
@@ -179,12 +190,15 @@ export default function PortfolioEditor() {
   async function refreshLive() {
     const res = await fetch("/api/portfolio/value", { cache: "no-store" });
     const json = await fetchJsonOrThrow(res);
-    setLive(json);
+    setLive({
+      totalUsd: Number(json?.totalUsd ?? json?.total_usd ?? NaN),
+      dayChangePct: Number(json?.dayChangePct ?? NaN),
+      dayChangeAmount: Number(json?.dayChangeAmount ?? NaN),
+    });
   }
 
   async function refreshSnapshots() {
-    // keep your current behavior (POST creates a snapshot)
-    await fetch("/api/portfolio/snapshot", { method: "POST" });
+    // IMPORTANT: do NOT POST a new snapshot here; only READ.
     const res = await fetch("/api/portfolio/snapshot", { cache: "no-store" });
     const json = await fetchJsonOrThrow(res);
 
@@ -309,6 +323,9 @@ export default function PortfolioEditor() {
       });
       await fetchJsonOrThrow(putRes);
 
+      // Create ONE snapshot after saving
+      await fetch("/api/portfolio/snapshot", { method: "POST" }).catch(() => {});
+
       setOk("Saved.");
       await refreshLive();
       await refreshSnapshots();
@@ -323,7 +340,7 @@ export default function PortfolioEditor() {
   // filter snapshot points based on resolution
   const viewSnapPoints = useMemo(() => {
     if (!snapPoints.length) return [];
-    if (resolution === "ALL") return snapPoints;
+    if (resolution === "ALL") return sortAsc(snapPoints);
 
     const now = new Date();
     const daysBack =
@@ -341,35 +358,36 @@ export default function PortfolioEditor() {
 
     const cutoff = new Date(now.getTime() - daysBack * 86400_000);
 
-    return snapPoints.filter((p) => {
-      const d = new Date(p.day + "T00:00:00Z");
-      return d >= cutoff;
-    });
+    return sortAsc(
+      snapPoints.filter((p) => {
+        const d = new Date(p.day + "T00:00:00Z");
+        return d >= cutoff;
+      })
+    );
   }, [snapPoints, resolution]);
 
-  // Build the series used by the chart:
-  // - sorted ASC
-  // - ensure a "today" point exists and equals totalAmountUsd (updates instantly after edits)
+  // Build series for chart:
+  // - sorted asc
+  // - force last point (today) to equal current totalAmountUsd (live holdings)
   const { seriesDays, seriesRaw } = useMemo(() => {
-    const pts = [...viewSnapPoints]
-      .filter((p) => p.day && p.day.length >= 10)
-      .sort((a, b) => a.day.localeCompare(b.day));
+    const pts = viewSnapPoints;
 
     const days = pts.map((p) => p.day);
     const raw = pts.map((p) => Number(p.total_usd));
 
-    if (days.length === 0) {
+    if (!days.length) {
       return { seriesDays: [todayDay], seriesRaw: [Number(totalAmountUsd)] };
     }
 
     const lastDay = days[days.length - 1];
+
     if (lastDay === todayDay) {
       raw[raw.length - 1] = Number(totalAmountUsd);
     } else if (todayDay > lastDay) {
       days.push(todayDay);
       raw.push(Number(totalAmountUsd));
     } else {
-      // todayDay is earlier than lastDay (timezone weirdness). Still force last point to live.
+      // timezone weirdness — still make last point be live
       raw[raw.length - 1] = Number(totalAmountUsd);
     }
 
@@ -393,7 +411,8 @@ export default function PortfolioEditor() {
             <div className="mt-1 text-sm">
               Today:{" "}
               <span className={Number(live.dayChangePct) >= 0 ? "text-green-600" : "text-red-600"}>
-                {Number(live.dayChangePct).toFixed(2)}% ({Number(live.dayChangeAmount).toFixed(2)})
+                {Number.isFinite(Number(live.dayChangePct)) ? Number(live.dayChangePct).toFixed(2) : "—"}% (
+                {Number.isFinite(Number(live.dayChangeAmount)) ? Number(live.dayChangeAmount).toFixed(2) : "—"})
               </span>
             </div>
           ) : null}
@@ -475,6 +494,7 @@ export default function PortfolioEditor() {
               portfolioRaw={seriesRaw}
               portfolioY={seriesY}
               normalizeMode={normalizeMode}
+              live={live}
             />
           )}
         </div>
@@ -618,6 +638,7 @@ function ChartSvg(props: {
   portfolioRaw: number[];
   portfolioY: number[];
   normalizeMode: "pct" | "price";
+  live: LiveValue | null;
 }) {
   const W = 720;
   const H = 260;
@@ -709,11 +730,18 @@ function ChartSvg(props: {
   const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : NaN;
   const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : NaN;
 
+  // TOOLTIP DAY%:
+  // If hovering the last (today) point, show LIVE dayChangePct so it matches header.
   const hoverDodPct = useMemo(() => {
     if (hoverIdx == null) return NaN;
     const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
+    const isLast = idx === props.portfolioRaw.length - 1;
+
+    if (isLast && props.live && Number.isFinite(Number(props.live.dayChangePct))) {
+      return Number(props.live.dayChangePct);
+    }
     return dayOverDayPct(props.portfolioRaw, idx);
-  }, [hoverIdx, props.portfolioRaw]);
+  }, [hoverIdx, props.portfolioRaw, props.live]);
 
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;

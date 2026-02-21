@@ -1,7 +1,8 @@
-// FILE 1: app/u/[username]/page.tsx
+// app/u/[username]/page.tsx
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
+import PublicPortfolioCard from "./ui/PublicPortfolioCard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,67 +34,6 @@ type HoldingRow = {
   amount: number;
   currency: string | null;
 };
-
-type SnapshotRow = {
-  id: string;
-  created_at: string;
-  user_id: string;
-  total_value: number | null;
-  currency: string | null;
-};
-
-const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155", "#94A3B8"];
-
-function dayKeyUTC(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
-function clamp(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, n));
-}
-
-function pctChange(newV: number, oldV: number) {
-  if (!Number.isFinite(newV) || !Number.isFinite(oldV) || oldV <= 0) return null;
-  return ((newV - oldV) / oldV) * 100;
-}
-
-function buildConicGradient(items: { label: string; value: number; color: string }[]) {
-  const total = items.reduce((a, x) => a + x.value, 0);
-  if (!total) return { gradient: "conic-gradient(#E6EEE9 0 100%)", rows: [] as any[] };
-
-  let acc = 0;
-  const stops: string[] = [];
-
-  const rows = items
-    .filter((x) => x.value > 0)
-    .map((x) => {
-      const pct = (x.value / total) * 100;
-      const from = acc;
-      const to = acc + pct;
-      acc = to;
-      stops.push(`${x.color} ${from.toFixed(3)}% ${to.toFixed(3)}%`);
-      return { ...x, pct };
-    });
-
-  return { gradient: `conic-gradient(${stops.join(", ")})`, rows };
-}
-
-function buildLinePoints(values: number[], w: number, h: number, pad = 6) {
-  const finite = values.filter((v) => Number.isFinite(v));
-  if (!finite.length) return "";
-  const min = Math.min(...finite);
-  const max = Math.max(...finite);
-  const span = max - min || 1;
-
-  return values
-    .map((v, i) => {
-      const vv = Number.isFinite(v) ? v : min;
-      const x = pad + (i * (w - pad * 2)) / Math.max(values.length - 1, 1);
-      const y = pad + (1 - (vv - min) / span) * (h - pad * 2);
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
 
 function Shell({ children, title = "Back to feed" }: { children: ReactNode; title?: string }) {
   return (
@@ -162,7 +102,6 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
 
   const isOwner = !!user && user.id === profile.id;
 
-  // Public portfolio + holdings
   const { data: publicPortfolio } = await supabase
     .from("portfolios")
     .select("id, name, is_public, created_at")
@@ -179,75 +118,6 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
     : { data: null, error: null };
 
   const holdings = (publicHoldings ?? []) as HoldingRow[];
-  const totalAllocation = holdings.reduce((acc, h) => acc + (Number(h.amount) || 0), 0);
-
-  // Snapshots: latest per day
-  const { data: snapRows } = await supabase
-    .from("portfolio_snapshots")
-    .select("id, created_at, user_id, total_value, currency")
-    .eq("user_id", profile.id)
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  const byDay = new Map<string, number>();
-  for (const r of (snapRows ?? []) as SnapshotRow[]) {
-    const k = String(r.created_at).slice(0, 10);
-    if (!byDay.has(k)) byDay.set(k, Number(r.total_value ?? NaN));
-  }
-
-  // Last 7 days with carry-forward (keep NaN until we have a real value)
-  const today = new Date();
-  const lineDays: string[] = [];
-  const lineVals: number[] = [];
-
-  let carry: number | null = null;
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
-    const k = dayKeyUTC(d);
-    lineDays.push(k);
-
-    const v = byDay.get(k);
-    if (Number.isFinite(Number(v)) && Number(v) > 0) carry = Number(v);
-
-    lineVals.push(carry ?? NaN);
-  }
-
-  // deltas: last vs first finite, and last vs previous finite
-  const lastIdx = lineVals.length - 1;
-  const lastV = Number(lineVals[lastIdx] ?? NaN);
-
-  const baseIdx = lineVals.findIndex((v) => Number.isFinite(v) && Number(v) > 0);
-  const baseV = baseIdx >= 0 ? Number(lineVals[baseIdx]) : NaN;
-
-  const prevV = (() => {
-    for (let i = lastIdx - 1; i >= 0; i--) {
-      const v = Number(lineVals[i]);
-      if (Number.isFinite(v) && v > 0) return v;
-    }
-    return NaN;
-  })();
-
-  const delta7Pct = pctChange(lastV, baseV);
-  const delta1Pct = pctChange(lastV, prevV);
-
-  const maxV = Math.max(...lineVals.filter((v) => Number.isFinite(v)), 0);
-
-  // pie
-  const pieItems = holdings
-    .map((h, i) => ({
-      label: String(h.symbol || "").toUpperCase(),
-      value: Number(h.amount) || 0,
-      currency: h.currency || "—",
-      color: PALETTE[i % PALETTE.length],
-    }))
-    .filter((x) => x.value > 0);
-
-  const { gradient, rows: pieRows } = buildConicGradient(pieItems);
-
-  // line svg
-  const W = 520;
-  const H = 110;
-  const poly = buildLinePoints(lineVals, W, H, 8);
 
   const safeUsername = profile.username ?? "unknown";
   const initial = (safeUsername[0] ?? "?").toUpperCase();
@@ -329,117 +199,11 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
               Failed to load portfolio: {holdErr.message}
             </div>
           ) : publicPortfolio ? (
-            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-base font-semibold">{publicPortfolio.name || "Portfolio"}</div>
-                  <div className="text-xs text-[#6B7A74]">Public</div>
-                </div>
-
-                <div className="text-right">
-                  <div className="text-xs text-[#6B7A74]">Total allocation</div>
-                  <div className="text-sm font-semibold">{totalAllocation.toLocaleString()}</div>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Pie */}
-                <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Allocation</div>
-                    <div className="text-xs text-[#6B7A74]">{pieRows.length ? `${pieRows.length} holdings` : ""}</div>
-                  </div>
-
-                  <div className="mt-3 flex items-start gap-4">
-                    <div
-                      className="h-28 w-28 rounded-full border border-[#D7E4DD] bg-white"
-                      style={{ backgroundImage: gradient }}
-                      aria-label="Portfolio allocation pie"
-                    />
-                    <div className="flex-1 space-y-2">
-                      {pieRows.length ? (
-                        pieRows.slice(0, 6).map((r: any) => (
-                          <div key={r.label} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: r.color }}
-                              />
-                              <span className="font-medium">{r.label}</span>
-                            </div>
-                            <span className="text-[#6B7A74]">{clamp(r.pct, 0, 100).toFixed(1)}%</span>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-xs text-[#6B7A74]">No holdings yet.</div>
-                      )}
-                      {pieRows.length > 6 ? (
-                        <div className="text-[11px] text-[#6B7A74]">+ {pieRows.length - 6} more</div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Line */}
-                <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Last 7 days</div>
-                    <div className="text-xs text-[#6B7A74]">
-                      {maxV > 0 ? (
-                        <>
-                          {Number.isFinite(lastV) ? lastV.toLocaleString() : "—"} (7D{" "}
-                          {delta7Pct === null ? "—" : `${delta7Pct.toFixed(1)}%`} • 1D{" "}
-                          {delta1Pct === null ? "—" : `${delta1Pct.toFixed(1)}%`})
-                        </>
-                      ) : (
-                        "No snapshots yet"
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-3 overflow-hidden rounded-2xl border border-[#D7E4DD] bg-white p-2">
-                    <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Portfolio value line chart">
-                      <polyline
-                        fill="none"
-                        stroke="#22C55E"
-                        strokeWidth="4"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                        points={poly || ""}
-                      />
-                    </svg>
-                  </div>
-
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#6B7A74]">
-                    <span>{lineDays[0]}</span>
-                    <span>{lineDays[lineDays.length - 1]}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Holdings table */}
-              {holdings.length ? (
-                <div className="overflow-hidden rounded-2xl border border-[#D7E4DD]">
-                  <div className="grid grid-cols-3 bg-[#F7FAF8] px-4 py-2 text-xs font-semibold text-[#4B5B55]">
-                    <div>Symbol</div>
-                    <div className="text-right">Amount</div>
-                    <div className="text-right">Currency</div>
-                  </div>
-
-                  <div className="divide-y divide-[#E6EEE9]">
-                    {holdings.map((h) => (
-                      <div key={h.id} className="grid grid-cols-3 px-4 py-2 text-sm">
-                        <div className="font-medium">{String(h.symbol || "").toUpperCase()}</div>
-                        <div className="text-right">{Number(h.amount || 0).toLocaleString()}</div>
-                        <div className="text-right text-[#6B7A74]">{h.currency || "—"}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-[#6B7A74]">No holdings yet.</div>
-              )}
-            </div>
+            <PublicPortfolioCard
+              username={username}
+              portfolioName={publicPortfolio.name || "Portfolio"}
+              holdings={holdings}
+            />
           ) : (
             <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#6B7A74]">
               This user’s portfolio is private.
