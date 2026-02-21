@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 /**
- * REQUIREMENT FOR THIS FILE TO SHOW CORRECT DAILY %:
+ * DAILY % RULE (DO NOT TOUCH):
  * /api/portfolio/value MUST return:
  * {
  *   totalUsd: number,
@@ -23,8 +23,14 @@ import { useRouter } from "next/navigation";
  *   }>
  * }
  *
- * This UI does NOT recompute daily % locally.
+ * This UI DOES NOT recompute daily % locally.
  * It displays dayChangePct/dayChangeAmount returned by the API.
+ *
+ * HOLDINGS INPUT RULE (FIX FOR "4 MILLION" BUG):
+ * - User enters INVESTED AMOUNT + BUY PRICE (both in the holding's currency)
+ * - We compute shares = invested / buyPrice
+ * - We still save "amount" as SHARES (to keep existing /api/portfolio/value logic working)
+ * - We also save buy_price so we can show what they bought at
  */
 
 type SymbolResult = { symbol: string; name: string; type: string };
@@ -32,8 +38,9 @@ type SymbolResult = { symbol: string; name: string; type: string };
 type Holding = {
   symbol: string;
   name?: string;
-  amount: number; // shares
-  currency: string; // trade currency (for saving + display)
+  amount: number; // SHARES (computed from invested/buyPrice)
+  currency: string; // trade currency
+  buy_price?: number | null; // per-share buy price in trade currency
 };
 
 type SnapPoint = { day: string; total_usd: number };
@@ -57,6 +64,7 @@ type LiveValue = {
 };
 
 const CURRENCIES = ["USD", "JPY", "AUD", "HKD", "EUR", "GBP", "CNY", "CAD", "CHF", "SGD"];
+const PALETTE = ["#22C55E", "#0B0F0E", "#6B7A74", "#9CA3AF", "#16A34A", "#334155"];
 
 function clampNonNeg(n: number) {
   if (!Number.isFinite(n) || n < 0) return 0;
@@ -135,16 +143,6 @@ function dayOverDayPct(series: number[], i: number) {
   return ((cur - prev) / prev) * 100;
 }
 
-/**
- * Generates visually distinct colors (no repeats within the current list size).
- * Deterministic by index; if you want stability across reorders, sort your items first.
- */
-function colorForIndex(i: number) {
-  // golden angle spacing
-  const hue = (i * 137.508) % 360;
-  return `hsl(${hue.toFixed(1)} 70% 45%)`;
-}
-
 function buildConicGradient(items: { color: string; value: number }[], total: number) {
   if (total <= 0 || items.length === 0) {
     return { backgroundImage: "conic-gradient(#D7E4DD 0 100%)" } as any;
@@ -177,7 +175,11 @@ export default function PortfolioEditor() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolResult[]>([]);
   const [pick, setPick] = useState<SymbolResult | null>(null);
-  const [amount, setAmount] = useState<string>("");
+
+  // NEW INPUTS:
+  const [invested, setInvested] = useState<string>(""); // invested amount in trade currency
+  const [buyPrice, setBuyPrice] = useState<string>(""); // buy price per share in trade currency
+
   const [currency, setCurrency] = useState("USD");
 
   const [err, setErr] = useState<string | null>(null);
@@ -249,8 +251,9 @@ export default function PortfolioEditor() {
       const nextHoldings: Holding[] = rows
         .map((r: any): Holding => ({
           symbol: safeStr(r.symbol).toUpperCase(),
-          amount: safeNum(r.amount, 0),
+          amount: safeNum(r.amount, 0), // shares
           currency: safeStr(r.currency, "USD").toUpperCase(),
+          buy_price: Number.isFinite(Number(r.buy_price)) ? Number(r.buy_price) : null,
         }))
         .filter((h: Holding) => Boolean(h.symbol) && Number.isFinite(h.amount) && h.amount > 0);
 
@@ -292,9 +295,21 @@ export default function PortfolioEditor() {
       return;
     }
 
-    const amt = clampNonNeg(Number(amount));
-    if (amt <= 0) {
-      setErr("Enter a valid amount.");
+    const inv = clampNonNeg(Number(invested));
+    if (inv <= 0) {
+      setErr("Enter a valid invested amount.");
+      return;
+    }
+
+    const bp = clampNonNeg(Number(buyPrice));
+    if (bp <= 0) {
+      setErr("Enter a valid buy price.");
+      return;
+    }
+
+    const shares = inv / bp;
+    if (!Number.isFinite(shares) || shares <= 0) {
+      setErr("Invested / buy price produced invalid shares.");
       return;
     }
 
@@ -302,19 +317,23 @@ export default function PortfolioEditor() {
     const cur = currency.toUpperCase();
 
     setHoldings((prev) => {
-      const idx = prev.findIndex((h) => h.symbol === sym && h.currency === cur);
+      // Merge if same symbol+currency+buy_price (optional). If you want strict per-lot tracking, remove merging.
+      const idx = prev.findIndex(
+        (h) => h.symbol === sym && h.currency === cur && Number(h.buy_price ?? 0) === Number(bp)
+      );
       if (idx >= 0) {
         const copy = [...prev];
-        copy[idx] = { ...copy[idx], amount: copy[idx].amount + amt };
+        copy[idx] = { ...copy[idx], amount: copy[idx].amount + shares };
         return copy;
       }
-      return [...prev, { symbol: sym, name: pick.name, amount: amt, currency: cur }];
+      return [...prev, { symbol: sym, name: pick.name, amount: shares, currency: cur, buy_price: bp }];
     });
 
     setPick(null);
     setResults([]);
     setQ("");
-    setAmount("");
+    setInvested("");
+    setBuyPrice("");
   }
 
   function removeHolding(i: number) {
@@ -334,6 +353,7 @@ export default function PortfolioEditor() {
       });
       await fetchJsonOrThrow(metaRes);
 
+      // NOTE: backend must accept buy_price or ignore it safely.
       const putRes = await fetch("/api/portfolio", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -359,34 +379,25 @@ export default function PortfolioEditor() {
   const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.nowUsd > 0), [live]);
   const totalAmountUsd = useMemo(() => safeNum(live?.totalUsd, 0), [live]);
 
-  // Stable ordering so colors don't reshuffle every render
-  const livePositionsSorted = useMemo(() => {
-    return [...livePositions].sort((a, b) => {
-      const byVal = (b.nowUsd ?? 0) - (a.nowUsd ?? 0);
-      if (byVal !== 0) return byVal;
-      return `${a.symbol}-${a.currency}`.localeCompare(`${b.symbol}-${b.currency}`);
-    });
-  }, [livePositions]);
-
   const pieStyle = useMemo(() => {
-    const items = livePositionsSorted.map((p, i) => ({ color: colorForIndex(i), value: p.nowUsd }));
+    const items = livePositions.map((p, i) => ({ color: PALETTE[i % PALETTE.length], value: p.nowUsd }));
     return buildConicGradient(items, totalAmountUsd);
-  }, [livePositionsSorted, totalAmountUsd]);
+  }, [livePositions, totalAmountUsd]);
 
   const pieLegend = useMemo(() => {
-    if (totalAmountUsd <= 0 || livePositionsSorted.length === 0) return [];
-    return livePositionsSorted.map((p, i) => {
+    if (totalAmountUsd <= 0 || livePositions.length === 0) return [];
+    return livePositions.map((p, i) => {
       const pct = (p.nowUsd / totalAmountUsd) * 100;
       return {
         key: `${p.symbol}-${p.currency}-${i}`,
-        color: colorForIndex(i),
+        color: PALETTE[i % PALETTE.length],
         label: `${p.symbol} (${p.currency})`,
         pct,
         shares: p.shares,
         usdValue: p.nowUsd,
       };
     });
-  }, [livePositionsSorted, totalAmountUsd]);
+  }, [livePositions, totalAmountUsd]);
 
   // snapshot view filtering
   const viewSnapPoints = useMemo(() => {
@@ -398,14 +409,14 @@ export default function PortfolioEditor() {
       resolution === "1D"
         ? 5
         : resolution === "1W"
-        ? 28
-        : resolution === "1M"
-        ? 90
-        : resolution === "3M"
-        ? 180
-        : resolution === "1Y"
-        ? 365
-        : 3650;
+          ? 28
+          : resolution === "1M"
+            ? 90
+            : resolution === "3M"
+              ? 180
+              : resolution === "1Y"
+                ? 365
+                : 3650;
 
     const cutoff = new Date(now.getTime() - daysBack * 86400_000);
 
@@ -558,9 +569,7 @@ export default function PortfolioEditor() {
       <div className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-4 py-3">
         <div>
           <div className="text-sm font-semibold">Public portfolio</div>
-          <div className="text-xs text-[#6B7A74]">
-            {isPublic ? "Anyone with the link can view it." : "Only you can view it."}
-          </div>
+          <div className="text-xs text-[#6B7A74]">{isPublic ? "Anyone with the link can view it." : "Only you can view it."}</div>
         </div>
         <button
           type="button"
@@ -607,16 +616,23 @@ export default function PortfolioEditor() {
 
         <div className="grid grid-cols-12 gap-2">
           <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Shares"
+            value={invested}
+            onChange={(e) => setInvested(e.target.value)}
+            placeholder="Invested amount"
             inputMode="decimal"
-            className="col-span-7 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+            className="col-span-5 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+          />
+          <input
+            value={buyPrice}
+            onChange={(e) => setBuyPrice(e.target.value)}
+            placeholder="Buy price"
+            inputMode="decimal"
+            className="col-span-4 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           />
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
-            className="col-span-3 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
+            className="col-span-2 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm"
           >
             {CURRENCIES.map((c) => (
               <option key={c} value={c}>
@@ -627,13 +643,16 @@ export default function PortfolioEditor() {
           <button
             type="button"
             onClick={addHolding}
-            className="col-span-2 rounded-xl bg-[#22C55E] text-white text-sm font-medium hover:brightness-95"
+            className="col-span-1 rounded-xl bg-[#22C55E] text-white text-sm font-medium hover:brightness-95"
+            title="Add"
           >
-            Add
+            +
           </button>
         </div>
 
-        <div className="text-xs text-[#6B7A74]">Shares are stored. Daily % comes from API (prev close vs current).</div>
+        <div className="text-xs text-[#6B7A74]">
+          You enter invested amount + buy price. We compute shares automatically. Daily % still comes from API (prev close vs current).
+        </div>
       </div>
 
       {/* Holdings list */}
@@ -642,26 +661,33 @@ export default function PortfolioEditor() {
         {holdings.length === 0 ? (
           <div className="text-sm text-[#6B7A74]">No holdings yet.</div>
         ) : (
-          holdings.map((h, i) => (
-            <div
-              key={`${h.symbol}-${h.currency}-${i}`}
-              className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3"
-            >
-              <div>
-                <div className="text-sm font-medium">
-                  <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
-                </div>
-                <div className="text-xs text-[#6B7A74]">{h.amount.toLocaleString()} shares</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => removeHolding(i)}
-                className="rounded-xl border border-[#D7E4DD] bg-white px-3 py-1 text-sm hover:shadow-sm"
+          holdings.map((h, i) => {
+            const bp = Number(h.buy_price ?? 0);
+            const investedApprox = bp > 0 ? h.amount * bp : 0;
+            return (
+              <div
+                key={`${h.symbol}-${h.currency}-${i}`}
+                className="flex items-center justify-between rounded-2xl border border-[#D7E4DD] bg-white p-3"
               >
-                Remove
-              </button>
-            </div>
-          ))
+                <div>
+                  <div className="text-sm font-medium">
+                    <span className="font-mono">{h.symbol}</span> <span className="text-[#6B7A74]">({h.currency})</span>
+                  </div>
+                  <div className="text-xs text-[#6B7A74]">
+                    Shares: {h.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
+                    {bp > 0 ? `• Buy: ${fmtMoney(bp)} • Invested: ${fmtMoney(investedApprox)}` : "• Buy: —"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeHolding(i)}
+                  className="rounded-xl border border-[#D7E4DD] bg-white px-3 py-1 text-sm hover:shadow-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
 
