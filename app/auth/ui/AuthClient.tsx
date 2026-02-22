@@ -24,7 +24,6 @@ type MeProfile = {
 };
 
 async function postAuthRedirect(nextSafe: string) {
-  // Optional: if profile missing username, send them to profile setup
   try {
     const res = await fetch("/api/profile/me", { cache: "no-store" });
     const data = await res.json().catch(() => null);
@@ -157,7 +156,7 @@ export default function AuthClient({
       return;
     }
 
-    // If confirmations ON, user must confirm before session exists
+    // confirmations ON => no session until email confirm
     if (!data.session) {
       setMsg("Account created. Check your email to confirm, then log in.");
       return;
@@ -330,14 +329,14 @@ export default function AuthClient({
         {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
         {msg && <p className="mt-4 text-sm text-[#4B5A55]">{msg}</p>}
 
-        <div className="mt-6 text-xs text-[#6B7A74]">
-          Redirect after auth:{" "}
-          <span className="font-mono text-[#3E4C47]">{nextSafe}</span>
-        </div>
+        {/* removed: Redirect after auth debug line */}
 
-        <div className="mt-6 text-xs text-[#6B7A74]">
-          <Link href="/" className="hover:underline">
-            ← Back to home
+        <div className="mt-6">
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center rounded-2xl bg-[#2E9B5D] px-6 py-3 text-sm font-semibold text-white hover:opacity-95"
+          >
+            Back to home
           </Link>
         </div>
       </div>
