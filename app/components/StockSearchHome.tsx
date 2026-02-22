@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type SearchItem = {
+type Item = {
   symbol: string;
   name?: string | null;
   type?: string | null;
-  source?: string | null;
+  exchange?: string | null;
 };
 
-function useDebouncedValue<T>(value: T, ms: number) {
+function useDebounced<T>(value: T, ms: number) {
   const [v, setV] = useState(value);
   useEffect(() => {
     const t = setTimeout(() => setV(value), ms);
@@ -19,150 +19,141 @@ function useDebouncedValue<T>(value: T, ms: number) {
   return v;
 }
 
+async function fetchJson(url: string) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
 export default function StockSearchHome() {
   const router = useRouter();
   const [q, setQ] = useState("");
-  const [items, setItems] = useState<SearchItem[]>([]);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [active, setActive] = useState<number>(-1);
+  const [items, setItems] = useState<Item[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
 
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const debounced = useDebouncedValue(q, 200);
-
-  const trimmed = useMemo(() => q.trim(), [q]);
+  const dq = useDebounced(q.trim(), 200);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+      if (!boxRef.current) return;
+      if (!boxRef.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
   useEffect(() => {
-    const query = debounced.trim();
-    if (!query) {
-      setItems([]);
-      setLoading(false);
-      return;
+    let cancelled = false;
+
+    async function run() {
+      setErr(null);
+
+      const query = dq;
+      if (!query) {
+        setItems([]);
+        return;
+      }
+
+      // Try your existing endpoint(s). One of these is already returning JSON on your site.
+      const a = await fetchJson(`/api/symbols?q=${encodeURIComponent(query)}`);
+      const b = a ?? (await fetchJson(`/api/stocks/search?q=${encodeURIComponent(query)}`));
+
+      const raw = b?.results ?? b?.items ?? b;
+      const arr: Item[] = Array.isArray(raw) ? raw : [];
+
+      // normalize
+      const normalized = arr
+        .map((x: any) => ({
+          symbol: String(x?.symbol || "").toUpperCase(),
+          name: x?.name ? String(x.name) : null,
+          type: x?.type ? String(x.type) : null,
+          exchange: x?.exchange ? String(x.exchange) : null,
+        }))
+        .filter((x) => x.symbol);
+
+      if (!cancelled) {
+        setItems(normalized.slice(0, 10));
+        setOpen(true);
+      }
     }
 
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => null);
-        if (cancelled) return;
-
-        const list = Array.isArray(json?.results) ? json.results : [];
-        setItems(list);
-        setOpen(true);
-        setActive(-1);
-      } catch {
-        if (!cancelled) {
-          setItems([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
+    run();
     return () => {
       cancelled = true;
     };
-  }, [debounced]);
+  }, [dq]);
 
-  function go(symbol: string) {
-    const s = symbol.trim().toUpperCase();
-    if (!s) return;
+  const canSubmit = useMemo(() => q.trim().length > 0, [q]);
+
+  function go(symbolRaw: string) {
+    const symbol = symbolRaw.trim().toUpperCase();
+    if (!symbol) return;
+
+    // IMPORTANT:
+    // Your stock page route must exist as: app/s/[symbol]/page.tsx
+    router.push(`/s/${encodeURIComponent(symbol)}`);
     setOpen(false);
-    router.push(`/s/${encodeURIComponent(s)}`);
   }
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const s = trimmed.toUpperCase();
-    if (!s) return;
-    go(s);
-  }
+    setErr(null);
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || !items.length) return;
+    const symbol = q.trim().toUpperCase();
+    if (!symbol) return;
 
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActive((i) => Math.min(i + 1, items.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      if (active >= 0 && active < items.length) {
-        e.preventDefault();
-        go(items[active].symbol);
-      }
-    } else if (e.key === "Escape") {
-      setOpen(false);
-    }
+    // If user typed “apple”, try first dropdown, otherwise just go with what they typed.
+    const top = items[0]?.symbol;
+    go(top || symbol);
   }
 
   return (
-    <div ref={wrapRef} className="relative mt-3">
+    <div ref={boxRef} className="mt-3 relative">
       <form onSubmit={onSubmit} className="flex gap-2">
         <input
           value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setOpen(true);
-          }}
+          onChange={(e) => setQ(e.target.value)}
           onFocus={() => {
             if (items.length) setOpen(true);
           }}
-          onKeyDown={onKeyDown}
           placeholder="Search tickers (e.g., NVDA, TSLA, 7203.T)"
           className="flex-1 rounded-2xl border border-[#E5EFEA] bg-white px-4 py-3 text-sm outline-none focus:border-[#22C55E]"
           autoCapitalize="characters"
           autoCorrect="off"
           spellCheck={false}
         />
-
-        <button className="rounded-2xl bg-[#0B0F0E] text-white px-5 py-3 text-sm">
+        <button
+          disabled={!canSubmit}
+          className="rounded-2xl bg-[#0B0F0E] text-white px-5 py-3 text-sm disabled:opacity-50"
+        >
           Search
         </button>
       </form>
 
-      {open && (loading || items.length) ? (
+      {err && <div className="mt-2 text-xs text-red-600">{err}</div>}
+
+      {open && items.length > 0 && (
         <div className="absolute z-50 mt-2 w-full rounded-2xl border border-[#D7E4DD] bg-white shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="px-4 py-3 text-xs text-[#6B7A74]">Searching…</div>
-          ) : (
-            <ul className="max-h-72 overflow-auto">
-              {items.map((it, idx) => (
-                <li key={`${it.symbol}-${idx}`}>
-                  <button
-                    type="button"
-                    onClick={() => go(it.symbol)}
-                    onMouseEnter={() => setActive(idx)}
-                    className={[
-                      "w-full text-left px-4 py-3 text-sm flex items-center justify-between",
-                      idx === active ? "bg-[#F7FAF8]" : "bg-white",
-                    ].join(" ")}
-                  >
-                    <span className="font-semibold">{it.symbol}</span>
-                    <span className="ml-3 text-xs text-[#6B7A74] truncate max-w-[70%]">
-                      {it.name || ""}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {items.map((it) => (
+            <button
+              key={`${it.symbol}-${it.name ?? ""}`}
+              type="button"
+              onClick={() => go(it.symbol)}
+              className="w-full text-left px-4 py-3 hover:bg-[#F7FAF8] flex items-center justify-between gap-4"
+            >
+              <div>
+                <div className="text-sm font-semibold">{it.symbol}</div>
+                {it.name ? <div className="text-xs text-[#6B7A74] truncate">{it.name}</div> : null}
+              </div>
+              <div className="text-xs text-[#6B7A74]">
+                {it.exchange ? it.exchange : it.type ? it.type : ""}
+              </div>
+            </button>
+          ))}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
