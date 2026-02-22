@@ -334,7 +334,9 @@ export default function AuthClient({
         <div className="mt-6">
           <Link
             href="/"
-            className="inline-flex items-center justify-center rounded-2xl bg-[#2E9B5D] px-6 py-3 text-sm font-semibold text-white hover:opacity-95"
+            className="inline-flex items-center justify-center rounded-2xl
+               bg-[#2E9B5D] px-6 py-3 text-sm font-semibold text-white
+               hover:opacity-95 transition disabled:opacity-60"
           >
             Back to home
           </Link>
