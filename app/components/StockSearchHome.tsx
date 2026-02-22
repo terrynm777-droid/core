@@ -14,15 +14,7 @@ function safeStr(x: any, fallback = "") {
   return s ? s : fallback;
 }
 
-function isStockLike(r: SymbolResult) {
-  // Adjust if your API uses different type strings.
-  // Goal: include equities/etf/crypto, exclude users (if users ever appear).
-  const t = safeStr(r.type).toLowerCase();
-  if (!t) return true;
-  return t.includes("stock") || t.includes("equity") || t.includes("etf") || t.includes("crypto");
-}
-
-async function fetchJsonOrThrow(url: string) {
+async function fetchJson(url: string) {
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
   let json: any = null;
@@ -43,9 +35,9 @@ export default function StockSearchHome() {
   const [results, setResults] = useState<SymbolResult[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
-
   const trimmed = useMemo(() => q.trim(), [q]);
 
   useEffect(() => {
@@ -63,30 +55,44 @@ export default function StockSearchHome() {
 
     async function run() {
       const t = trimmed;
-      if (t.length < 1) {
+
+      // If empty: close dropdown
+      if (!t) {
         setResults([]);
+        setError(null);
         setOpen(false);
         return;
       }
 
       setLoading(true);
+      setError(null);
+
       try {
-        const json = await fetchJsonOrThrow(`/api/symbols?q=${encodeURIComponent(t)}`);
+        const json = await fetchJson(`/api/symbols?q=${encodeURIComponent(t)}`);
         const raw: SymbolResult[] = Array.isArray(json?.results) ? json.results : [];
-        const filtered = raw.filter(isStockLike).slice(0, 10);
+
+        // Keep it simple: don’t over-filter here. If your API returns users,
+        // fix the API route (section B below).
+        const filtered = raw
+          .filter((r) => safeStr(r.symbol))
+          .slice(0, 10);
+
         if (!alive) return;
+
         setResults(filtered);
         setOpen(true);
-      } catch {
+      } catch (e: any) {
         if (!alive) return;
+
+        // IMPORTANT: keep dropdown open and show the error instead of “nothing”
         setResults([]);
-        setOpen(false);
+        setError(e?.message ?? "Symbol search failed");
+        setOpen(true);
       } finally {
         if (alive) setLoading(false);
       }
     }
 
-    // small debounce to stop spam
     const id = window.setTimeout(run, 150);
     return () => {
       alive = false;
@@ -103,24 +109,23 @@ export default function StockSearchHome() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // If user typed something but didn't click a dropdown result,
-    // just route to /s/QUERY
     if (trimmed) go(trimmed);
   }
 
   return (
     <div ref={wrapRef}>
-      <div className="text-sm font-semibold">Stock search</div>
-
       <form onSubmit={onSubmit} className="mt-2 flex items-center gap-3">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => {
-            if (results.length) setOpen(true);
+            if (trimmed) setOpen(true);
           }}
           placeholder="Search tickers (e.g., NVDA, TSLA, 7203.T)"
           className="flex-1 rounded-2xl border border-[#D7E4DD] bg-white px-4 py-3 text-sm outline-none focus:border-[#2E9B5D]"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
         />
         <button
           type="submit"
@@ -134,13 +139,19 @@ export default function StockSearchHome() {
         <div className="mt-2 overflow-hidden rounded-2xl border border-[#D7E4DD] bg-white shadow-sm">
           {loading ? (
             <div className="px-4 py-3 text-sm text-[#6B7A74]">Searching…</div>
+          ) : error ? (
+            <div className="px-4 py-3 text-sm text-red-600">
+              {error}
+              <div className="mt-1 text-xs text-[#6B7A74]">
+                You can still press Search to go to /s/{trimmed.toUpperCase()}.
+              </div>
+            </div>
           ) : results.length ? (
             results.map((r) => (
               <button
-                key={`${r.symbol}-${r.type ?? ""}`}
+                key={`${r.symbol}-${r.type ?? ""}-${r.name ?? ""}`}
                 type="button"
                 onMouseDown={(e) => {
-                  // prevents input blur from killing click
                   e.preventDefault();
                   go(r.symbol);
                 }}
