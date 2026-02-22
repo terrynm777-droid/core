@@ -93,7 +93,7 @@ export default function StockSearchHome() {
 
     // IMPORTANT:
     // Your stock page route must exist as: app/s/[symbol]/page.tsx
-    router.push(`/s/${encodeURIComponent(symbol)}`);
+    router.push(`/p/${encodeURIComponent(symbol)}`);
     setOpen(false);
   }
 
