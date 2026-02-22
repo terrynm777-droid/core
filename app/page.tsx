@@ -61,7 +61,7 @@ export default function HomePage() {
           <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
             <div className="space-y-6">
               <TrendingLive />
-              <StockSearch />
+              <StockSearchHome />
               <HeadlinesLive />
             </div>
           </div>
