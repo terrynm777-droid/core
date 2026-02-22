@@ -35,7 +35,6 @@ export default function StockSearch() {
       </form>
 
       {err && <div className="mt-2 text-xs text-red-600">{err}</div>}
-      <div className="mt-2 text-xs text-[#6B7A74]">Pulls live quotes via your API key.</div>
     </div>
   );
 }
