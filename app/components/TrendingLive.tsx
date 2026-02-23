@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Row = { symbol: string; price: number; pct: number };
@@ -38,19 +39,22 @@ export default function TrendingLive() {
             const sign = x.pct > 0 ? "+" : "";
             const pctClass = x.pct >= 0 ? "text-[#16A34A]" : "text-red-600";
             return (
-              <div
+              <Link
                 key={x.symbol}
-                className="rounded-2xl border border-[#E5EFEA] bg-[#F4FBF6] p-4"
+                href={`/p/${encodeURIComponent(x.symbol)}`}
+                className="block"
               >
-                <div className="text-sm font-semibold">{x.symbol}</div>
-                <div className="text-xs text-[#3E4C47] mt-1">
-                  ${x.price.toFixed(2)}{" "}
-                  <span className={pctClass}>
-                    ({sign}
-                    {x.pct.toFixed(2)}%)
-                  </span>
+                <div className="rounded-2xl border border-[#E5EFEA] bg-[#F4FBF6] p-4">
+                  <div className="text-sm font-semibold">{x.symbol}</div>
+                  <div className="text-xs text-[#3E4C47] mt-1">
+                    ${x.price.toFixed(2)}{" "}
+                    <span className={pctClass}>
+                      ({sign}
+                      {x.pct.toFixed(2)}%)
+                    </span>
+                  </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
