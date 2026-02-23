@@ -361,7 +361,12 @@ if (lastDay === todayDay) {
             {seriesDays.length === 0 ? (
               <div className="text-xs text-[#6B7A74]">No history yet.</div>
             ) : (
-              <ChartSvg days={seriesDays} portfolioRaw={seriesRaw} portfolioY={seriesDayPct} live={live} />
+              <ChartSvg
+  days={seriesDays}
+  portfolioRaw={seriesRaw}
+  portfolioY={seriesRaw}
+  live={live}
+/>
             )}
           </div>
         </div>
@@ -423,8 +428,9 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
     return all.length ? all : [0, 1];
   }, [props.portfolioY]);
 
-  const minY = Math.min(...allVals);
-  const maxY = Math.max(...allVals);
+  const abs = Math.max(...allVals.map(v => Math.abs(v))) || 1;
+const minY = -abs;
+const maxY = abs;
   const span = maxY - minY || 1;
 
   const yAt = (v: number) => {
