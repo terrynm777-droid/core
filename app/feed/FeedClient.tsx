@@ -348,19 +348,13 @@ export default function FeedClient() {
                 </Link>
               )}
 
-                <Link
-                href="/news"
-  className="rounded-full border border-[#D7E4DD] px-4 py-2 text-sm font-medium hover:bg-[#F3F7F5]"
->
-  News
-</Link>
-
-              <button
-                type="button"
-                onClick={createPost}
-                disabled={posting || !content.trim()}
-                className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
+                
+                 <button
+                  type="button"
+                  onClick={createPost}
+                  disabled={posting || !content.trim()}
+                  className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  >
                 {posting ? "Posting…" : "Post"}
               </button>
             </div>
