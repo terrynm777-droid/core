@@ -166,9 +166,6 @@ export default function NewsPage() {
                   placeholder="Keywords (AI, election, climate...)"
                   className="mt-2 w-full rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm outline-none"
                 />
-                <div className="mt-2 text-xs text-[#6B7A74]">
-                  Tip: leave blank for Top; or pick a Topic preset.
-                </div>
               </div>
             </div>
 
@@ -196,9 +193,6 @@ export default function NewsPage() {
               </button>
             </div>
 
-            <div className="mt-3 text-xs text-[#6B7A74]">
-              Note: Finnhub doesn’t support true “country news” filtering. This page is topic/search driven.
-            </div>
           </div>
         ) : null}
 
