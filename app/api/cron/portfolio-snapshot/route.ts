@@ -47,11 +47,12 @@ async function getLiveQuotes(symbols: string[]) {
 
 export async function GET(req: Request) {
   // Auth guard for cron
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!process.env.CRON_SECRET || token !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { searchParams } = new URL(req.url);
+  const secret = searchParams.get("secret");
+  
+  if (secret !== process.env.CRON_SECRET) {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
