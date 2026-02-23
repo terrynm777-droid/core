@@ -450,8 +450,26 @@ export default function PortfolioEditor() {
     return { seriesDays: days, seriesRaw: raw };
   }, [viewSnapPoints, todayDay, totalAmountUsd]);
 
-  const seriesPct = useMemo(() => normalizeToPct(seriesRaw), [seriesRaw]);
-  const seriesY = normalizeMode === "pct" ? seriesPct : seriesRaw;
+  const seriesDayPct = useMemo(() => {
+  const out = seriesRaw.map((_, i) => dayOverDayPct(seriesRaw, i));
+  // first point has no previous day
+  if (out.length) out[0] = 0;
+
+  // last point (today) should show authoritative live.dayChangePct
+  const last = out.length - 1;
+  if (
+    last >= 0 &&
+    seriesDays[last] === todayDay &&
+    live &&
+    Number.isFinite(Number(live.dayChangePct))
+  ) {
+    out[last] = Number(live.dayChangePct);
+  }
+
+  return out;
+}, [seriesRaw, seriesDays, todayDay, live]);
+
+const seriesY = normalizeMode === "pct" ? seriesDayPct : seriesRaw;
 
   if (loading) return <div className="text-sm text-[#6B7A74]">Loading…</div>;
 
@@ -804,15 +822,24 @@ function ChartSvg(props: {
   // - For the last point (today), show live.dayChangePct (authoritative).
   // - Otherwise compute day-over-day from snapshot series.
   const hoverDodPct = useMemo(() => {
-    if (hoverIdx == null) return NaN;
-    const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
-    const isLast = idx === props.portfolioRaw.length - 1;
+  if (hoverIdx == null) return NaN;
+  const idx = clampIdx(hoverIdx, props.portfolioY.length);
 
-    if (isLast && props.live && Number.isFinite(Number(props.live.dayChangePct))) {
-      return Number(props.live.dayChangePct);
-    }
-    return dayOverDayPct(props.portfolioRaw, idx);
-  }, [hoverIdx, props.portfolioRaw, props.live]);
+  // In % mode the plotted line IS daily %; show that exact value.
+  if (props.normalizeMode === "pct") {
+    const v = Number(props.portfolioY[idx]);
+    return Number.isFinite(v) ? v : NaN;
+  }
+
+  // In price mode, compute day-over-day from raw, but last point uses live.dayChangePct.
+  const rawIdx = clampIdx(hoverIdx, props.portfolioRaw.length);
+  const isLast = rawIdx === props.portfolioRaw.length - 1;
+
+  if (isLast && props.live && Number.isFinite(Number(props.live.dayChangePct))) {
+    return Number(props.live.dayChangePct);
+  }
+  return dayOverDayPct(props.portfolioRaw, rawIdx);
+}, [hoverIdx, props.portfolioRaw, props.portfolioY, props.normalizeMode, props.live]);
 
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;
@@ -834,9 +861,7 @@ function ChartSvg(props: {
           <div className="text-[#6B7A74]">
             Day: <span className="font-medium">{fmtPct(hoverDodPct)}</span>
           </div>
-          <div className="text-[#6B7A74]">
-            {props.normalizeMode === "pct" ? `Series: ${fmtPct(hoverY)}` : `Value: $${fmtMoney(hoverY)}`}
-          </div>
+        
           <div className="text-[#6B7A74]">Total: ${fmtMoney(hoverRaw)}</div>
         </div>
       ) : null}

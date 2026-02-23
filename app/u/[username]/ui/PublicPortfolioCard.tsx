@@ -241,7 +241,22 @@ export default function PublicPortfolioCard(props: {
     return { seriesDays: days, seriesRaw: raw };
   }, [snapPoints, live, todayDay]);
 
-  const seriesPct = useMemo(() => normalizeToPct(seriesRaw), [seriesRaw]);
+  const seriesDayPct = useMemo(() => {
+  const out = seriesRaw.map((_, i) => dayOverDayPct(seriesRaw, i));
+  if (out.length) out[0] = 0;
+
+  const last = out.length - 1;
+  if (
+    last >= 0 &&
+    seriesDays[last] === todayDay &&
+    live &&
+    Number.isFinite(Number(live.dayChangePct))
+  ) {
+    out[last] = Number(live.dayChangePct);
+  }
+
+  return out;
+}, [seriesRaw, seriesDays, todayDay, live]);
 
   // USD allocation pie (authoritative from live.positions.nowUsd)
   const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.nowUsd > 0), [live]);
@@ -336,7 +351,7 @@ export default function PublicPortfolioCard(props: {
             {seriesDays.length === 0 ? (
               <div className="text-xs text-[#6B7A74]">No history yet.</div>
             ) : (
-              <ChartSvg days={seriesDays} portfolioRaw={seriesRaw} portfolioY={seriesPct} live={live} />
+              <ChartSvg days={seriesDays} portfolioRaw={seriesRaw} portfolioY={seriesDayPct} live={live} />
             )}
           </div>
         </div>
@@ -466,16 +481,11 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
 
   // last point uses authoritative live.dayChangePct
   const hoverDodPct = useMemo(() => {
-    if (hoverIdx == null) return NaN;
-    const idx = clampIdx(hoverIdx, props.portfolioRaw.length);
-    const isLast = idx === props.portfolioRaw.length - 1;
-
-    if (isLast && props.live && Number.isFinite(Number(props.live.dayChangePct))) {
-      return Number(props.live.dayChangePct);
-    }
-    return dayOverDayPct(props.portfolioRaw, idx);
-  }, [hoverIdx, props.portfolioRaw, props.live]);
-
+  if (hoverIdx == null) return NaN;
+  const idx = clampIdx(hoverIdx, props.portfolioY.length);
+  const v = Number(props.portfolioY[idx]);
+  return Number.isFinite(v) ? v : NaN;
+}, [hoverIdx, props.portfolioY]);
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;
     if (!el) return;
@@ -496,9 +506,8 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
           <div className="text-[#6B7A74]">
             Day: <span className="font-medium">{fmtPct(hoverDodPct)}</span>
           </div>
-          <div className="text-[#6B7A74]">
-            Series: <span className="font-medium">{fmtPct(hoverY)}</span>
-          </div>
+         
+
           <div className="text-[#6B7A74]">Total: ${fmtMoney(hoverRaw)}</div>
         </div>
       ) : null}
