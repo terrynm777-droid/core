@@ -229,14 +229,24 @@ export default function PublicPortfolioCard(props: {
     }
 
     const lastDay = days[days.length - 1];
-    if (lastDay === todayDay) {
-      if (Number.isFinite(liveTotal)) raw[raw.length - 1] = liveTotal;
-    } else if (todayDay > lastDay) {
-      days.push(todayDay);
-      raw.push(Number.isFinite(liveTotal) ? liveTotal : NaN);
-    } else {
-      if (Number.isFinite(liveTotal)) raw[raw.length - 1] = liveTotal;
-    }
+
+if (lastDay === todayDay) {
+  // overwrite today's snapshot with live value if we have it
+  if (Number.isFinite(liveTotal)) {
+    raw[raw.length - 1] = liveTotal;
+  }
+} else if (todayDay > lastDay) {
+  // add today ONLY if live value exists (never push NaN)
+  if (Number.isFinite(liveTotal)) {
+    days.push(todayDay);
+    raw.push(liveTotal);
+  }
+} else {
+  // safety: future-dated snapshot edge case
+  if (Number.isFinite(liveTotal)) {
+    raw[raw.length - 1] = liveTotal;
+  }
+}
 
     return { seriesDays: days, seriesRaw: raw };
   }, [snapPoints, live, todayDay]);
