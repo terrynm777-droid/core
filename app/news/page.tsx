@@ -13,17 +13,43 @@ type NewsItem = {
   description: string;
 };
 
-
 const CATEGORY_OPTIONS = [
   { key: "general", label: "Top" },
   { key: "business", label: "Business" },
-  { key: "technology", label: "Tech" }, // note: UI key, mapped in API
-  { key: "crypto", label: "Crypto" },
-  { key: "forex", label: "FX" },
+  { key: "technology", label: "Tech" }, // UI label; mapped to API
+];
+
+const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string }[] = [
+  { key: "top", label: "📰 Top", q: "", category: "general" },
+
+  // broad
+  { key: "world", label: "🌍 World", q: "world OR global OR international" },
+  { key: "geopolitics", label: "🛰️ Geopolitics", q: "geopolitics OR conflict OR sanctions OR election" },
+  { key: "policy", label: "🏛️ Policy", q: "policy OR regulation OR government" },
+
+  // tech / science
+  { key: "ai", label: "🤖 AI", q: "AI OR artificial intelligence OR OpenAI OR Nvidia", category: "technology" },
+  { key: "tech", label: "💻 Tech", q: "technology OR software OR hardware OR chips", category: "technology" },
+  { key: "science", label: "🔬 Science", q: "science OR research OR breakthrough OR study" },
+  { key: "space", label: "🚀 Space", q: "space OR NASA OR rocket OR satellite" },
+
+  // health / environment
+  { key: "health", label: "🧬 Health", q: "health OR medicine OR hospital OR disease OR vaccine" },
+  { key: "climate", label: "🌱 Climate", q: "climate OR emissions OR renewable OR extreme weather" },
+
+  // business / markets
+  { key: "economy", label: "📈 Economy", q: "economy OR inflation OR rates OR recession", category: "business" },
+  { key: "markets", label: "📊 Markets", q: "stocks OR earnings OR futures OR bonds", category: "business" },
+  { key: "crypto", label: "🪙 Crypto", q: "crypto OR bitcoin OR ethereum OR blockchain" },
+  { key: "fx", label: "💱 FX", q: "forex OR USD OR JPY OR AUD OR exchange rate" },
+
+  // culture / sport
+  { key: "culture", label: "🎭 Culture", q: "culture OR entertainment OR film OR music" },
+  { key: "sports", label: "🏟️ Sports", q: "sports OR tournament OR league OR match" },
 ];
 
 function mapUiCategoryToApi(cat: string) {
-  // keep your UI labels but match route.ts mapping keys
+  // matches your /api/news route mapping keys
   if (cat === "technology") return "tech";
   return cat;
 }
@@ -35,20 +61,22 @@ export default function NewsPage() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const [country, setCountry] = useState("world");
   const [category, setCategory] = useState("general");
   const [q, setQ] = useState("");
 
   const apiCategory = useMemo(() => mapUiCategoryToApi(category), [category]);
 
-  async function load() {
+  async function load(next?: { category?: string; q?: string }) {
+    const nextCategory = typeof next?.category === "string" ? next!.category! : category;
+    const nextQ = typeof next?.q === "string" ? next!.q! : q;
+
     setLoading(true);
     setErr(null);
+
     try {
       const sp = new URLSearchParams();
-      sp.set("country", country);
-      sp.set("category", apiCategory);
-      if (q.trim()) sp.set("q", q.trim());
+      sp.set("category", mapUiCategoryToApi(nextCategory));
+      if (nextQ.trim()) sp.set("q", nextQ.trim());
       sp.set("pageSize", "30");
 
       const res = await fetch(`/api/news?${sp.toString()}`, { cache: "no-store" });
@@ -97,7 +125,7 @@ export default function NewsPage() {
 
             <button
               type="button"
-              onClick={load}
+              onClick={() => load()}
               className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white hover:opacity-95"
             >
               Refresh
@@ -109,21 +137,27 @@ export default function NewsPage() {
         {filtersOpen ? (
           <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div>
-                <div className="text-xs font-semibold text-[#6B7A74]">Country</div>
-                <select
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm outline-none"
-                >
-                  {COUNTRY_OPTIONS.map((o) => (
-                    <option key={o.key} value={o.key}>
-                      {o.label}
-                    </option>
+              {/* Topics */}
+              <div className="md:col-span-3">
+                <div className="text-xs font-semibold text-[#6B7A74]">Topics</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {TOPIC_PRESETS.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => {
+                        if (typeof t.category === "string") setCategory(t.category);
+                        setQ(t.q);
+                      }}
+                      className="rounded-full border border-[#D7E4DD] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[#F7FAF8]"
+                    >
+                      {t.label}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
 
+              {/* Category */}
               <div>
                 <div className="text-xs font-semibold text-[#6B7A74]">Category</div>
                 <select
@@ -137,16 +171,21 @@ export default function NewsPage() {
                     </option>
                   ))}
                 </select>
+                <div className="mt-2 text-xs text-[#6B7A74]">API category: {apiCategory}</div>
               </div>
 
-              <div>
+              {/* Search */}
+              <div className="md:col-span-2">
                 <div className="text-xs font-semibold text-[#6B7A74]">Search</div>
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Keywords (AI, earnings, election...)"
+                  placeholder="Keywords (AI, election, climate...)"
                   className="mt-2 w-full rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm outline-none"
                 />
+                <div className="mt-2 text-xs text-[#6B7A74]">
+                  Tip: leave blank for Top; or pick a Topic preset.
+                </div>
               </div>
             </div>
 
@@ -154,7 +193,6 @@ export default function NewsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setCountry("world");
                   setCategory("general");
                   setQ("");
                 }}
@@ -176,7 +214,7 @@ export default function NewsPage() {
             </div>
 
             <div className="mt-3 text-xs text-[#6B7A74]">
-              Note: “Country” is best-effort filtering (Finnhub doesn’t support country news directly).
+              Note: Finnhub doesn’t support true “country news” filtering. This page is topic/search driven.
             </div>
           </div>
         ) : null}
@@ -189,9 +227,7 @@ export default function NewsPage() {
           </div>
 
           {err ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {err}
-            </div>
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
           ) : null}
 
           {loading ? (
@@ -214,7 +250,7 @@ export default function NewsPage() {
                       <img
                         src={it.image}
                         alt=""
-                        className="h-16 w-24 rounded-xl object-cover border border-[#D7E4DD]"
+                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
                       />
                     ) : null}
 
