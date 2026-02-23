@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createBrowserClient } from "@supabase/ssr";
 
 type MeProfile = {
   id?: string | null;
@@ -12,6 +14,7 @@ type MeProfile = {
 export default function AvatarMenu({ me }: { me: MeProfile | null }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -22,8 +25,21 @@ export default function AvatarMenu({ me }: { me: MeProfile | null }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  const initial =
-    (me?.username?.trim()?.[0] || "?").toUpperCase();
+  const initial = (me?.username?.trim()?.[0] || "?").toUpperCase();
+
+  async function onSignOut(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    setOpen(false);
+
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  }
 
   return (
     <div ref={ref} className="relative">
@@ -61,7 +77,11 @@ export default function AvatarMenu({ me }: { me: MeProfile | null }) {
         >
           <Link
             role="menuitem"
-            href={me?.username ? `/u/${encodeURIComponent(me.username)}` : "/settings/profile"}
+            href={
+              me?.username
+                ? `/u/${encodeURIComponent(me.username)}`
+                : "/settings/profile"
+            }
             className="block px-4 py-3 text-sm hover:bg-[#F7FAF8]"
             onClick={() => setOpen(false)}
           >
@@ -92,7 +112,7 @@ export default function AvatarMenu({ me }: { me: MeProfile | null }) {
             role="menuitem"
             href="/auth/signout"
             className="block px-4 py-3 text-sm text-red-600 hover:bg-[#F7FAF8]"
-            onClick={() => setOpen(false)}
+            onClick={onSignOut}
           >
             Sign out
           </Link>
