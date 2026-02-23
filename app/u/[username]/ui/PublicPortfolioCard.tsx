@@ -58,13 +58,11 @@ function shortDay(day: string) {
 }
 
 function normalizeToPct(series: number[]) {
-  const firstIdx = series.findIndex((v) => Number.isFinite(v) && v > 0);
-  if (firstIdx < 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
-  const base = series[firstIdx];
-  if (!Number.isFinite(base) || base <= 0) return series.map((v) => (Number.isFinite(v) ? 0 : NaN));
-  return series.map((v) => {
+  // Day-over-day % change series (what users expect for "% Change")
+  return series.map((v, i) => {
     if (!Number.isFinite(v)) return NaN;
-    return ((Number(v) - base) / base) * 100;
+    if (i === 0) return 0;
+    return dayOverDayPct(series, i);
   });
 }
 
