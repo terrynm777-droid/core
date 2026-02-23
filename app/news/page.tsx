@@ -13,16 +13,6 @@ type NewsItem = {
   description: string;
 };
 
-const COUNTRY_OPTIONS = [
-  { key: "world", label: "🌍 World" },
-  { key: "us", label: "🇺🇸 US" },
-  { key: "jp", label: "🇯🇵 Japan" },
-  { key: "au", label: "🇦🇺 Australia" },
-  { key: "cn", label: "🇨🇳 China" },
-  { key: "uk", label: "🇬🇧 UK" },
-  { key: "eu", label: "🇪🇺 Europe" },
-  { key: "in", label: "🇮🇳 India" },
-];
 
 const CATEGORY_OPTIONS = [
   { key: "general", label: "Top" },
