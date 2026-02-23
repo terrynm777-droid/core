@@ -337,6 +337,7 @@ export default function FeedClient() {
             <span>{content.length}/20000</span>
 
             <div className="flex items-center gap-3">
+
               {me?.username ? (
                 <Link href={`/u/${encodeURIComponent(me.username)}`} className="hover:underline">
                   Posting as @{me.username}
@@ -346,6 +347,13 @@ export default function FeedClient() {
                   Set up profile
                 </Link>
               )}
+
+                <Link
+                href="/news"
+  className="rounded-full border border-[#D7E4DD] px-4 py-2 text-sm font-medium hover:bg-[#F3F7F5]"
+>
+  News
+</Link>
 
               <button
                 type="button"
