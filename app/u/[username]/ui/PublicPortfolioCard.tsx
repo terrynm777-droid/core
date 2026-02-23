@@ -364,7 +364,7 @@ if (lastDay === todayDay) {
               <ChartSvg
   days={seriesDays}
   portfolioRaw={seriesRaw}
-  portfolioY={seriesRaw}
+  portfolioY={seriesDayPct} // ✅ percent series
   live={live}
 />
             )}
@@ -424,14 +424,16 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
   };
 
   const allVals = useMemo(() => {
-    const all = props.portfolioY.flat().filter((v) => Number.isFinite(v));
-    return all.length ? all : [0, 1];
-  }, [props.portfolioY]);
+  const all = props.portfolioY.filter((v) => Number.isFinite(v));
+  return all.length ? all : [0];
+}, [props.portfolioY]);
 
-  const abs = Math.max(...allVals.map(v => Math.abs(v))) || 1;
+const abs = Math.max(...allVals.map((v) => Math.abs(v))) || 1;
+
+// ✅ symmetric around 0 so small % moves are visible
 const minY = -abs;
 const maxY = abs;
-  const span = maxY - minY || 1;
+const span = maxY - minY || 1;
 
   const yAt = (v: number) => {
     const vv = Number.isFinite(v) ? Number(v) : 0;
