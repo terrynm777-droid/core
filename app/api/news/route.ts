@@ -7,24 +7,11 @@ export const dynamic = "force-dynamic";
 const FINNHUB_CATEGORY_MAP: Record<string, string> = {
   general: "general",
   top: "general",
-  markets: "general", // finnhub doesn't have "markets" as a category; general is closest
+  markets: "general",
   tech: "technology",
   business: "business",
   crypto: "crypto",
   forex: "forex",
-  politics: "general",
-};
-
-const COUNTRY_KEYWORDS: Record<string, string[]> = {
-  world: [],
-
-  us: ["United States", "U.S.", "US", "America", "Washington", "New York", "California"],
-  jp: ["Japan", "Tokyo", "Osaka", "Yen", "JPY"],
-  au: ["Australia", "Sydney", "Melbourne", "Canberra", "AUD"],
-  cn: ["China", "Beijing", "Shanghai", "Hong Kong", "CN", "CNY", "Yuan"],
-  uk: ["United Kingdom", "UK", "Britain", "London", "GBP"],
-  eu: ["Europe", "European Union", "EU", "Germany", "France", "ECB", "Euro", "EUR"],
-  in: ["India", "New Delhi", "Mumbai", "RBI", "INR"],
 };
 
 function clampStr(s: string | null, max = 80) {
@@ -32,35 +19,47 @@ function clampStr(s: string | null, max = 80) {
   return v.length > max ? v.slice(0, max) : v;
 }
 
-function includesAny(hay: string, needles: string[]) {
-  const t = hay.toLowerCase();
-  return needles.some((n) => t.includes(n.toLowerCase()));
+function scoreMatch(text: string, needles: string[]) {
+  const t = text.toLowerCase();
+
+  let score = 0;
+
+  for (const n of needles) {
+    const needle = n.toLowerCase();
+
+    if (t.includes(needle)) score += 1;
+
+    // extra weight if appears in title
+    if (t.startsWith(needle)) score += 2;
+  }
+
+  return score;
 }
 
 export async function GET(req: Request) {
   const apiKey = process.env.FINNHUB_API_KEY;
+
   if (!apiKey) {
     return NextResponse.json({ error: "Missing FINNHUB_API_KEY" }, { status: 500 });
   }
 
   const { searchParams } = new URL(req.url);
 
-  const countryKey = clampStr(searchParams.get("country") || "world");
   const categoryKey = clampStr(searchParams.get("category") || "general");
   const q = clampStr(searchParams.get("q") || "");
   const pageSize = Math.max(1, Math.min(50, Number(searchParams.get("pageSize") || "30")));
 
   const finnhubCategory = FINNHUB_CATEGORY_MAP[categoryKey] ?? "general";
+
   const url =
     "https://finnhub.io/api/v1/news?" +
     new URLSearchParams({
       category: finnhubCategory,
       token: apiKey,
-    }).toString();
+    });
 
   const res = await fetch(url, {
-    // Finnhub is fine with server-side fetch; do NOT "no-store" spam-refresh
-    next: { revalidate: 60 }, // 1 min cache to protect quota
+    next: { revalidate: 60 },
   });
 
   const j = await res.json().catch(() => null);
@@ -73,33 +72,40 @@ export async function GET(req: Request) {
   }
 
   const raw = Array.isArray(j) ? j : [];
-  const countryNeedles = COUNTRY_KEYWORDS[countryKey] ?? [];
-  const qNeedles = q ? q.split(/\s+/).filter(Boolean) : [];
 
-  // Finnhub fields: headline, source, url, image, datetime, summary, category, related
   let items = raw.map((a: any) => ({
     title: String(a?.headline ?? ""),
     source: String(a?.source ?? ""),
     url: String(a?.url ?? ""),
     image: String(a?.image ?? ""),
-    publishedAt: a?.datetime ? new Date(Number(a.datetime) * 1000).toISOString() : "",
+    publishedAt: a?.datetime
+      ? new Date(Number(a.datetime) * 1000).toISOString()
+      : "",
     description: String(a?.summary ?? ""),
   }));
 
-  // Keyword search (best-effort; Finnhub doesn't support query server-side)
-  if (qNeedles.length) {
-    items = items.filter((it) => {
-      const blob = `${it.title} ${it.description} ${it.source}`;
-      return includesAny(blob, qNeedles);
-    });
+  // 🔎 ADVANCED KEYWORD FILTER
+  if (q) {
+    const needles = q.split(/\s+/).filter(Boolean);
+
+    items = items
+      .map((it) => {
+        const blob = `${it.title} ${it.description} ${it.source}`;
+        const score = scoreMatch(blob, needles);
+        return { ...it, _score: score };
+      })
+      .filter((it) => it._score > 0)
+      .sort((a, b) => b._score - a._score)
+      .map(({ _score, ...rest }) => rest);
   }
 
-  // Country filter (best-effort keyword-based)
-  if (countryNeedles.length) {
-    items = items.filter((it) => {
-      const blob = `${it.title} ${it.description}`;
-      return includesAny(blob, countryNeedles);
-    });
+  // default = latest news
+  else {
+    items = items.sort(
+      (a, b) =>
+        new Date(b.publishedAt).getTime() -
+        new Date(a.publishedAt).getTime()
+    );
   }
 
   items = items.slice(0, pageSize);
@@ -107,7 +113,6 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     provider: "finnhub",
-    country: countryKey,
     category: categoryKey,
     q,
     items,
