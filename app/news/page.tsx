@@ -157,23 +157,6 @@ export default function NewsPage() {
                 </div>
               </div>
 
-              {/* Category */}
-              <div>
-                <div className="text-xs font-semibold text-[#6B7A74]">Category</div>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm outline-none"
-                >
-                  {CATEGORY_OPTIONS.map((o) => (
-                    <option key={o.key} value={o.key}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-2 text-xs text-[#6B7A74]">API category: {apiCategory}</div>
-              </div>
-
               {/* Search */}
               <div className="md:col-span-2">
                 <div className="text-xs font-semibold text-[#6B7A74]">Search</div>
