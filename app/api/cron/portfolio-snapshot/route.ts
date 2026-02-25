@@ -13,15 +13,7 @@ type HoldingRow = {
 };
 
 function dayKeyUTC(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
-function toUsdPerUnit(currency: string, raw: number) {
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  const c = currency.toUpperCase();
-  if (c === "USD") return 1;
-  if (raw > 5) return 1 / raw;
-  return raw;
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
 }
 
 async function getLiveQuotes(symbols: string[]) {
@@ -33,10 +25,7 @@ async function getLiveQuotes(symbols: string[]) {
     symbols.map(async (sym) => {
       const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`;
       const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        out[sym] = 0;
-        return;
-      }
+      if (!res.ok) return (out[sym] = 0);
       const j: any = await res.json().catch(() => null);
       const price = Number(j?.c ?? 0);
       out[sym] = Number.isFinite(price) ? price : 0;
@@ -49,10 +38,10 @@ export async function GET(req: Request) {
   // Auth guard for cron
   const { searchParams } = new URL(req.url);
   const secret = searchParams.get("secret");
-  
-  if (secret !== process.env.CRON_SECRET) {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
+
+  if (!secret || secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -64,8 +53,6 @@ export async function GET(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Pull all holdings joined to portfolios to get user_id.
-  // Adjust join if your schema differs.
   const { data: holdings, error } = await admin
     .from("portfolio_holdings")
     .select("symbol,amount,currency, portfolios!inner(user_id)")
@@ -73,12 +60,14 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const rows: HoldingRow[] = (holdings ?? []).map((r) => ({
-    user_id: String(r.portfolios?.user_id ?? ""),
-    symbol: r.symbol,
-    amount: r.amount,
-    currency: r.currency,
-  })).filter((r) => r.user_id);
+  const rows: HoldingRow[] = (holdings ?? [])
+    .map((r) => ({
+      user_id: String(r?.portfolios?.user_id ?? ""),
+      symbol: r?.symbol ?? null,
+      amount: r?.amount ?? null,
+      currency: r?.currency ?? null,
+    }))
+    .filter((r) => r.user_id);
 
   const day = dayKeyUTC(new Date());
 
@@ -102,20 +91,22 @@ export async function GET(req: Request) {
   const allSymbols = Array.from(new Set(Array.from(byUser.values()).flat().map((h) => h.symbol)));
   const allCurrencies = Array.from(new Set(Array.from(byUser.values()).flat().map((h) => h.currency)));
 
-  const [quotes, fxRaw] = await Promise.all([getLiveQuotes(allSymbols), getUsdBaseRates(allCurrencies)]);
-  const fxRates: Record<string, number> = (fxRaw as any)?.rates ?? {};
+  const [quotes, fx] = await Promise.all([getLiveQuotes(allSymbols), getUsdBaseRates(allCurrencies)]);
+  const usdPerUnit: Record<string, number> = fx?.rates ?? {};
 
   const upserts: { user_id: string; day: string; total_usd: number }[] = [];
 
   for (const [userId, hs] of byUser.entries()) {
-    const totalUsd = hs.reduce((acc, h) => {
+    let totalUsd = 0;
+
+    for (const h of hs) {
       const px = Number(quotes[h.symbol] ?? 0);
-      const rawFx = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
-      const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
-      if (!Number.isFinite(px) || px <= 0) return acc;
-      if (!Number.isFinite(usdPerUnit) || usdPerUnit <= 0) return acc;
-      return acc + h.shares * px * usdPerUnit;
-    }, 0);
+      const fxRate = Number(usdPerUnit[h.currency] ?? (h.currency === "USD" ? 1 : 0));
+      if (!Number.isFinite(px) || px <= 0) continue;
+      if (!Number.isFinite(fxRate) || fxRate <= 0) continue;
+
+      totalUsd += h.shares * px * fxRate;
+    }
 
     upserts.push({ user_id: userId, day, total_usd: totalUsd });
   }

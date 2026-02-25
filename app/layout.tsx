@@ -6,13 +6,13 @@ import { Analytics } from "@vercel/analytics/react";
 export const metadata: Metadata = {
   title: "Core",
   description: "Core",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>

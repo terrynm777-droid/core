@@ -127,8 +127,7 @@ export async function POST() {
 
   const totalUsd = hs.reduce((acc, h) => {
     const px = Number(quotes[h.symbol] ?? 0);
-    const rawFx = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
-    const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
+    const usdPerUnit = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
     if (!Number.isFinite(px) || px <= 0) return acc;
     if (!Number.isFinite(usdPerUnit) || usdPerUnit <= 0) return acc;
     return acc + h.shares * px * usdPerUnit;

@@ -93,8 +93,7 @@ export async function GET(req: Request) {
   const positions = hs.map((h) => {
     const q = quotes[h.symbol] ?? { current: 0, prevClose: 0 };
 
-    const rawFx = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
-    const usdPerUnit = toUsdPerUnit(h.currency, rawFx);
+    const usdPerUnit = Number(fxRates[h.currency] ?? (h.currency === "USD" ? 1 : 0));
 
     const prevClose = Number.isFinite(q.prevClose) && q.prevClose > 0 ? q.prevClose : q.current;
     const current = q.current;
