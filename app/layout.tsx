@@ -1,3 +1,4 @@
+// app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
 import CoreLogo from "@/app/components/CoreLogo";
@@ -7,8 +8,8 @@ export const metadata: Metadata = {
   title: "Core",
   description: "Core",
   icons: {
-    icon: "/icon.png",
-    apple: "/icon.png",
+    icon: [{ url: "/icon.png?v=2" }],
+    apple: [{ url: "/icon.png?v=2" }],
   },
 };
 
