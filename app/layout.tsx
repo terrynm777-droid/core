@@ -8,9 +8,9 @@ export const metadata: Metadata = {
   title: "Core",
   description: "Core",
   icons: {
-    icon: [{ url: "/icon.png?v=2" }],
-    apple: [{ url: "/icon.png?v=2" }],
-  },
+  icon: [{ url: "/icon.png?v=1003" }],
+  apple: [{ url: "/icon.png?v=1003" }],
+},
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
