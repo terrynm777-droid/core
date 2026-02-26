@@ -25,6 +25,7 @@ const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string 
   // broad
   { key: "world", label: "🌍 World", q: "world OR global OR international" },
   { key: "geopolitics", label: "🛰️ Geopolitics", q: "geopolitics OR conflict OR sanctions OR election" },
+  { key: "japan", label: "🇯🇵 Japan", q: "japan OR japanese OR tokyo OR nikkei OR topix OR boj OR yen OR jpy" },
   { key: "policy", label: "🏛️ Policy", q: "policy OR regulation OR government" },
 
   // tech / science
@@ -83,7 +84,15 @@ export default function NewsPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to load news");
 
-      setItems(Array.isArray(json?.items) ? json.items : []);
+      const incoming: NewsItem[] = Array.isArray(json?.items) ? json.items : [];
+setItems((prev) => {
+  const seen = new Set(prev.map((x) => x.url));
+  const merged = [...prev];
+  for (const it of incoming) {
+    if (it?.url && !seen.has(it.url)) merged.push(it);
+  }
+  return merged;
+});
     } catch (e: any) {
       setItems([]);
       setErr(e?.message || "Failed to load news");
