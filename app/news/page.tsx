@@ -20,33 +20,29 @@ const CATEGORY_OPTIONS = [
 ];
 
 const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string }[] = [
-  { key: "top", label: "📰 Top", q: "", category: "general" },
+  { key: "top", label: "📰 Top", q: "market OR stocks OR economy OR earnings OR inflation OR rates" },
 
-  // broad
   { key: "world", label: "🌍 World", q: "world OR global OR international" },
-  { key: "geopolitics", label: "🛰️ Geopolitics", q: "geopolitics OR conflict OR sanctions OR election" },
-  { key: "japan", label: "🇯🇵 Japan", q: "japan OR japanese OR tokyo OR nikkei OR topix OR boj OR yen OR jpy" },
-  { key: "policy", label: "🏛️ Policy", q: "policy OR regulation OR government" },
+  { key: "geopolitics", label: "🛰️ Geopolitics", q: "geopolitics OR conflict OR sanctions OR election OR war" },
+  { key: "policy", label: "🏛️ Policy", q: "policy OR regulation OR government OR law OR SEC OR antitrust" },
 
-  // tech / science
-  { key: "ai", label: "🤖 AI", q: "AI OR artificial intelligence OR OpenAI OR Nvidia", category: "technology" },
-  { key: "tech", label: "💻 Tech", q: "technology OR software OR hardware OR chips", category: "technology" },
-  { key: "science", label: "🔬 Science", q: "science OR research OR breakthrough OR study" },
-  { key: "space", label: "🚀 Space", q: "space OR NASA OR rocket OR satellite" },
+  { key: "ai", label: "🤖 AI", q: "AI OR artificial intelligence OR OpenAI OR Nvidia OR model OR LLM", category: "technology" },
+  { key: "tech", label: "💻 Tech", q: "technology OR software OR hardware OR chips OR semiconductors", category: "technology" },
+  { key: "science", label: "🔬 Science", q: "science OR research OR breakthrough OR study OR discovery" },
+  { key: "space", label: "🚀 Space", q: "space OR NASA OR rocket OR satellite OR SpaceX" },
 
-  // health / environment
-  { key: "health", label: "🧬 Health", q: "health OR medicine OR hospital OR disease OR vaccine" },
-  { key: "climate", label: "🌱 Climate", q: "climate OR emissions OR renewable OR extreme weather" },
+  { key: "health", label: "🧬 Health", q: "health OR medicine OR hospital OR disease OR vaccine OR biotech" },
+  { key: "climate", label: "🌱 Climate", q: "climate OR emissions OR renewable OR extreme weather OR carbon" },
 
-  // business / markets
-  { key: "economy", label: "📈 Economy", q: "economy OR inflation OR rates OR recession", category: "business" },
-  { key: "markets", label: "📊 Markets", q: "stocks OR earnings OR futures OR bonds", category: "business" },
-  { key: "crypto", label: "🪙 Crypto", q: "crypto OR bitcoin OR ethereum OR blockchain" },
-  { key: "fx", label: "💱 FX", q: "forex OR USD OR JPY OR AUD OR exchange rate" },
+  { key: "economy", label: "📈 Economy", q: "economy OR inflation OR rates OR recession OR GDP", category: "business" },
+  { key: "markets", label: "📊 Markets", q: "stocks OR earnings OR futures OR bonds OR S&P OR Nasdaq", category: "business" },
+  { key: "crypto", label: "🪙 Crypto", q: "crypto OR bitcoin OR ethereum OR blockchain OR ETF" },
+  { key: "fx", label: "💱 FX", q: "forex OR USD OR JPY OR AUD OR exchange rate OR yen" },
 
-  // culture / sport
-  { key: "culture", label: "🎭 Culture", q: "culture OR entertainment OR film OR music" },
+  { key: "culture", label: "🎭 Culture", q: "culture OR entertainment OR film OR music OR celebrity" },
   { key: "sports", label: "🏟️ Sports", q: "sports OR tournament OR league OR match" },
+
+  { key: "jp_ja", label: "🇯🇵 日本語", q: "__JP_JA__" },
 ];
 
 function mapUiCategoryToApi(cat: string) {
@@ -80,7 +76,14 @@ export default function NewsPage() {
       if (nextQ.trim()) sp.set("q", nextQ.trim());
       sp.set("pageSize", "30");
 
-      const res = await fetch(`/api/news?${sp.toString()}`, { cache: "no-store" });
+      const isJapaneseFeed = nextQ.trim() === "__JP_JA__" || q.trim() === "__JP_JA__";
+
+const res = await fetch(
+  isJapaneseFeed
+    ? `/api/news-jp?pageSize=30`
+    : `/api/news?${sp.toString()}`,
+  { cache: "no-store" }
+);
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to load news");
 
