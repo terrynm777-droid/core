@@ -7,8 +7,9 @@ export const metadata: Metadata = {
   title: "Core",
   description: "Core",
   icons: {
-    icon: [{ url: "/favicon-v2.ico", type: "image/x-icon" }],
-    shortcut: [{ url: "/favicon-v2.ico", type: "image/x-icon" }],
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
   },
 };
 
