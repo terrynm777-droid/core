@@ -7,17 +7,12 @@ export const metadata: Metadata = {
   title: "Core",
   description: "Core",
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
+    icon: [{ url: "/favicon-v2.ico", type: "image/x-icon" }],
+    shortcut: [{ url: "/favicon-v2.ico", type: "image/x-icon" }],
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
