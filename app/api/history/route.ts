@@ -5,45 +5,33 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type SnapRow = { day: string; total_usd: number | null };
-type Point = { day: string; total_usd: number };
-
-function clampInt(n: any, lo: number, hi: number) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return lo;
-  return Math.max(lo, Math.min(hi, Math.trunc(x)));
-}
 
 function dayKeyUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
-
-function addDaysUTC(isoDay: string, delta: number) {
-  const d = new Date(`${isoDay}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return dayKeyUTC(d);
+function startOfDayUTC(d: Date) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+function addDaysUTC(d: Date, n: number) {
+  const x = startOfDayUTC(d);
+  x.setUTCDate(x.getUTCDate() + n);
+  return x;
 }
 
 export async function GET(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: uerr,
-  } = await supabase.auth.getUser();
-
+  const { data: { user }, error: uerr } = await supabase.auth.getUser();
   if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const days = clampInt(searchParams.get("days"), 7, 365);
-  const end = dayKeyUTC(new Date());
-  const start = addDaysUTC(end, -(days - 1));
+  const days = Math.max(1, Math.min(365, Number(searchParams.get("days") || "30")));
 
   const { data, error } = await supabase
     .from("portfolio_snapshots")
     .select("day,total_usd")
     .eq("user_id", user.id)
-    .gte("day", start)
-    .lte("day", end)
     .order("day", { ascending: true })
+    .limit(3000)
     .returns<SnapRow[]>();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -56,15 +44,24 @@ export async function GET(req: Request) {
     if (k) map.set(k, Number.isFinite(v) ? v : 0);
   }
 
-  const points: Point[] = [];
-  let last = 0;
+  const end = startOfDayUTC(new Date());
+  const start = addDaysUTC(end, -(days - 1));
 
-  let cur = start;
-  while (cur <= end) {
-    if (map.has(cur)) last = map.get(cur)!;
-    points.push({ day: cur, total_usd: last });
-    cur = addDaysUTC(cur, 1);
+  // carry-forward baseline: last value on/before start
+  let last = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].day <= dayKeyUTC(start)) {
+      last = Number(rows[i].total_usd ?? 0) || 0;
+      break;
+    }
   }
 
-  return NextResponse.json({ points }, { status: 200 });
+  const points: { day: string; total_usd: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const k = dayKeyUTC(addDaysUTC(start, i));
+    if (map.has(k)) last = map.get(k)!;
+    points.push({ day: k, total_usd: last });
+  }
+
+  return NextResponse.json({ points });
 }
