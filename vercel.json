@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/portfolio-snapshot?secret=${CRON_SECRET}",
-      "schedule": "5 0 * * *"
+      "schedule": "0 22 * * *"
     }
   ]
 }
