@@ -40,6 +40,7 @@ const CATEGORIES = [
   { key: "health", label: "Health" },
   { key: "science", label: "Science" },
   { key: "sports", label: "Sports" },
+  { key: "japan", label: "🇯🇵 Japan" },
 ];
 
 const SORTS = [
