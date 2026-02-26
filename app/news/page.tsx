@@ -1,7 +1,6 @@
-// app/news/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 type NewsItem = {
@@ -36,28 +35,72 @@ const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string 
   { key: "culture", label: "🎭 Culture", q: "culture OR entertainment OR film OR music OR celebrity" },
   { key: "sports", label: "🏟️ Sports", q: "sports OR tournament OR league OR match" },
 
-  // Special sentinel -> route to /api/news-jp (Japanese-language feed)
+  // sentinel -> /api/news-jp (Japanese language feed)
   { key: "jp_ja", label: "🇯🇵 日本語", q: "__JP_JA__" },
 ];
 
 function mapUiCategoryToApi(cat: string) {
-  // matches your /api/news mapping keys
   if (cat === "technology") return "tech";
   return cat;
+}
+
+function safeTime(iso: string) {
+  const t = Date.parse(iso || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+function mergeNews(prev: NewsItem[], incoming: NewsItem[]) {
+  // dedupe by URL; incoming overwrites older
+  const map = new Map<string, NewsItem>();
+
+  for (const it of prev) if (it?.url) map.set(it.url, it);
+  for (const it of incoming) if (it?.url) map.set(it.url, it);
+
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => safeTime(b.publishedAt) - safeTime(a.publishedAt)); // newest first
+  return merged.slice(0, 400);
 }
 
 export default function NewsPage() {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
   const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [category, setCategory] = useState("general");
   const [q, setQ] = useState("");
 
-  async function load(next?: { category?: string; q?: string }) {
-    const nextCategory = typeof next?.category === "string" ? next.category : category;
-    const nextQ = typeof next?.q === "string" ? next.q : q;
+  const apiCategory = useMemo(() => mapUiCategoryToApi(category), [category]);
+  const cacheKey = useMemo(
+    () => `newsCache:v2:${apiCategory}:${q.trim() || "__EMPTY__"}`,
+    [apiCategory, q]
+  );
+
+  // Restore cached history for this filter (so refresh doesn't wipe)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (!raw) {
+        setItems([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setItems(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setItems([]);
+    }
+  }, [cacheKey]);
+
+  // Persist history for this filter
+  useEffect(() => {
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(items));
+    } catch {}
+  }, [cacheKey, items]);
+
+  async function load(opts?: { category?: string; q?: string; reset?: boolean }) {
+    const nextCategory = typeof opts?.category === "string" ? opts.category : category;
+    const nextQ = typeof opts?.q === "string" ? opts.q : q;
 
     setLoading(true);
     setErr(null);
@@ -81,23 +124,17 @@ export default function NewsPage() {
 
       const incoming: NewsItem[] = Array.isArray(json?.items) ? json.items : [];
 
-      // Dedupe by URL so refresh/preset doesn't spam duplicates
-      setItems((prev) => {
-        const seen = new Set(prev.map((x) => x.url));
-        const merged = [...prev];
-        for (const it of incoming) {
-          if (it?.url && !seen.has(it.url)) merged.push(it);
-        }
-        return merged;
-      });
+      if (opts?.reset) setItems(mergeNews([], incoming));
+      else setItems((prev) => mergeNews(prev, incoming));
     } catch (e: any) {
-      setItems([]);
       setErr(e?.message || "Failed to load news");
+      // keep items (history) on error
     } finally {
       setLoading(false);
     }
   }
 
+  // Initial fetch (keeps whatever cache restored)
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,7 +147,7 @@ export default function NewsPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold">News</h1>
-            <div className="mt-1 text-sm text-[#6B7A74]">Global headlines (Finnhub)</div>
+            <div className="mt-1 text-sm text-[#6B7A74]">Headlines</div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -139,11 +176,10 @@ export default function NewsPage() {
           </div>
         </div>
 
-        {/* Filters panel (collapsible) */}
+        {/* Filters */}
         {filtersOpen ? (
           <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {/* Topics */}
               <div className="md:col-span-3">
                 <div className="text-xs font-semibold text-[#6B7A74]">Topics</div>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -153,6 +189,7 @@ export default function NewsPage() {
                       type="button"
                       onClick={() => {
                         if (typeof t.category === "string") setCategory(t.category);
+                        else setCategory("general");
                         setQ(t.q);
                       }}
                       className="rounded-full border border-[#D7E4DD] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[#F7FAF8]"
@@ -163,7 +200,6 @@ export default function NewsPage() {
                 </div>
               </div>
 
-              {/* Search */}
               <div className="md:col-span-2">
                 <div className="text-xs font-semibold text-[#6B7A74]">Search</div>
                 <input
@@ -181,6 +217,7 @@ export default function NewsPage() {
                 onClick={() => {
                   setCategory("general");
                   setQ("");
+                  setItems([]);
                 }}
                 className="rounded-2xl border border-[#D7E4DD] bg-white px-5 py-2 text-sm font-medium hover:shadow-sm"
               >
@@ -191,8 +228,7 @@ export default function NewsPage() {
                 type="button"
                 onClick={() => {
                   setFiltersOpen(false);
-                  setItems([]); // important: new topic should replace list, not merge into old topic results
-                  load({ category, q });
+                  load({ category, q, reset: true }); // don’t mix topics
                 }}
                 className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white hover:opacity-95"
               >
@@ -205,55 +241,51 @@ export default function NewsPage() {
         {/* Results */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold">Top news</div>
+            <div className="text-sm font-semibold">News</div>
             <div className="text-xs text-[#6B7A74]">{loading ? "Loading…" : `${items.length} items`}</div>
           </div>
 
           {err ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {err}
-            </div>
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
           ) : null}
 
-          {!loading && items.length === 0 ? (
+          {!items.length && !loading ? (
             <div className="mt-8 text-sm text-[#6B7A74]">No results.</div>
-          ) : null}
-
-          <div className="mt-4 space-y-4">
-            {items.map((it, idx) => (
-              <a
-                key={`${it.url}-${idx}`}
-                href={it.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 hover:shadow-sm"
-              >
-                <div className="flex items-start gap-4">
-                  {it.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={it.image}
-                      alt=""
-                      className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
-                    />
-                  ) : null}
-
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold leading-snug">{it.title}</div>
-
-                    <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7A74]">
-                      <span>{it.source || "Unknown"}</span>
-                      {it.publishedAt ? <span>• {new Date(it.publishedAt).toLocaleString()}</span> : null}
-                    </div>
-
-                    {it.description ? (
-                      <div className="mt-2 line-clamp-2 text-sm text-[#4B5B55]">{it.description}</div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {items.map((it) => (
+                <a
+                  key={it.url}
+                  href={it.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 hover:shadow-sm"
+                >
+                  <div className="flex items-start gap-4">
+                    {it.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={it.image}
+                        alt=""
+                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                      />
                     ) : null}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold leading-snug">{it.title}</div>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7A74]">
+                        <span>{it.source || "Unknown"}</span>
+                        {it.publishedAt ? <span>• {new Date(it.publishedAt).toLocaleString()}</span> : null}
+                      </div>
+                      {it.description ? (
+                        <div className="mt-2 line-clamp-2 text-sm text-[#4B5B55]">{it.description}</div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              </a>
-            ))}
-          </div>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </main>
