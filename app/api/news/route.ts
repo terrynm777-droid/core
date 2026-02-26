@@ -4,18 +4,22 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Finnhub market news is a global/mostly-English feed.
+ * This route adds strict relevance filtering for topic/search presets.
+ */
+
 const FINNHUB_CATEGORY_MAP: Record<string, string> = {
-  japan: "general",
   general: "general",
   top: "general",
-  markets: "general",
+  markets: "general", // still "general" at Finnhub level
   tech: "technology",
   business: "business",
   crypto: "crypto",
   forex: "forex",
 };
 
-function clampStr(s: string | null, max = 200) {
+function clampStr(s: string | null, max = 400) {
   const v = String(s ?? "").trim();
   return v.length > max ? v.slice(0, max) : v;
 }
@@ -26,11 +30,6 @@ function toISOFromFinnhubDatetime(dt: any) {
   return new Date(n * 1000).toISOString();
 }
 
-const STOPWORDS = new Set([
-  "or","and","the","a","an","to","of","in","on","for","with","at","by","from","as",
-  "is","are","be","was","were","this","that","these","those",
-]);
-
 function normalizeNeedle(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
@@ -39,8 +38,35 @@ function isOrQuery(raw: string) {
   return /\sOR\s/i.test(raw);
 }
 
+const STOPWORDS = new Set([
+  "or",
+  "and",
+  "the",
+  "a",
+  "an",
+  "to",
+  "of",
+  "in",
+  "on",
+  "for",
+  "with",
+  "at",
+  "by",
+  "from",
+  "as",
+  "is",
+  "are",
+  "be",
+  "was",
+  "were",
+  "this",
+  "that",
+  "these",
+  "those",
+]);
+
 /**
- * If q contains " OR ", treat it as a list of phrases.
+ * If q contains " OR ", treat it as phrase needles.
  * Else treat it as keyword tokens (words).
  */
 function buildNeedles(rawQ: string) {
@@ -66,31 +92,62 @@ function buildNeedles(rawQ: string) {
 }
 
 /**
- * Expand needles for known thin categories so they actually catch wording.
- * (Only adds; never removes -> UI stays same.)
+ * Expand needles for thin topics so they actually catch wording.
+ * Only adds; never removes.
  */
 function expandNeedles(categoryKey: string, needles: string[]) {
   const out = [...needles];
 
-  if (categoryKey === "japan") {
-    out.push(
-      "japan","japanese","tokyo","nikkei","topix","tse","boj","bank of japan",
-      "yen","jpy","usd/jpy","usdjpy","yield curve control","jgb","shunto"
-    );
-  }
-
   if (categoryKey === "crypto") {
     out.push(
-      "bitcoin","btc","ethereum","eth","crypto","cryptocurrency","digital asset","stablecoin",
-      "token","blockchain","exchange","binance","coinbase","sec","etf"
+      "bitcoin",
+      "btc",
+      "ethereum",
+      "eth",
+      "crypto",
+      "cryptocurrency",
+      "digital asset",
+      "stablecoin",
+      "token",
+      "blockchain",
+      "exchange",
+      "binance",
+      "coinbase",
+      "sec",
+      "etf"
     );
   }
 
   if (categoryKey === "forex") {
     out.push(
-      "fx","forex","currency","currencies","dollar","usd","yen","jpy","euro","eur","pound","gbp","aud","cad","cny",
-      "dxy","usd/jpy","usdjpy","eur/usd","eurusd","aud/usd","audusd","exchange rate","rates",
-      "rate hike","rate cut","treasury yields","bond yields"
+      "fx",
+      "forex",
+      "currency",
+      "currencies",
+      "dollar",
+      "usd",
+      "yen",
+      "jpy",
+      "euro",
+      "eur",
+      "pound",
+      "gbp",
+      "aud",
+      "cad",
+      "cny",
+      "dxy",
+      "usd/jpy",
+      "usdjpy",
+      "eur/usd",
+      "eurusd",
+      "aud/usd",
+      "audusd",
+      "exchange rate",
+      "rates",
+      "rate hike",
+      "rate cut",
+      "treasury yields",
+      "bond yields"
     );
   }
 
@@ -98,9 +155,9 @@ function expandNeedles(categoryKey: string, needles: string[]) {
 }
 
 /**
- * Match/score:
- * - title matches are weighted heavier than description/source
- * - count "matches" as number of distinct needles that appear anywhere
+ * Strict scoring:
+ * - title hits weighted more than description/source
+ * - count distinct needle matches for title/body separately
  */
 function scoreItem(title: string, description: string, source: string, needles: string[]) {
   const t = (title || "").toLowerCase();
@@ -108,7 +165,8 @@ function scoreItem(title: string, description: string, source: string, needles: 
   const s = (source || "").toLowerCase();
 
   let score = 0;
-  let matches = 0;
+  let titleMatches = 0;
+  let bodyMatches = 0;
 
   for (const rawNeedle of needles) {
     const needle = rawNeedle.toLowerCase();
@@ -117,13 +175,19 @@ function scoreItem(title: string, description: string, source: string, needles: 
     const inTitle = t.includes(needle);
     const inBody = d.includes(needle) || s.includes(needle);
 
-    if (inTitle || inBody) matches += 1;
-    if (inTitle) score += 4;
-    if (inBody) score += 1;
-    if (t.startsWith(needle)) score += 2;
+    if (inTitle) {
+      titleMatches += 1;
+      score += 6;
+      if (t.startsWith(needle)) score += 2;
+    }
+    if (inBody) {
+      bodyMatches += 1;
+      score += 2;
+    }
   }
 
-  return { score, matches };
+  const matches = titleMatches + bodyMatches;
+  return { score, matches, titleMatches, bodyMatches };
 }
 
 function parseHoursToMs(hoursRaw: string) {
@@ -139,20 +203,15 @@ function isoToMs(iso: string) {
 
 export async function GET(req: Request) {
   const apiKey = process.env.FINNHUB_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "Missing FINNHUB_API_KEY" }, { status: 500 });
-  }
+  if (!apiKey) return NextResponse.json({ error: "Missing FINNHUB_API_KEY" }, { status: 500 });
 
   const { searchParams } = new URL(req.url);
 
-  // UI sends these (your backend used to ignore them). We accept + echo.
-  const country = clampStr(searchParams.get("country") || "world", 30);
+  const categoryKey = clampStr(searchParams.get("category") || "general", 50);
+  const rawQ = clampStr(searchParams.get("q") || "", 600);
   const sort = clampStr(searchParams.get("sort") || "publishedAt", 30);
   const hoursRaw = clampStr(searchParams.get("hours") || "24", 10);
-
-  // Existing params
-  const categoryKey = clampStr(searchParams.get("category") || "general", 50);
-  const rawQ = clampStr(searchParams.get("q") || "", 300);
+  const country = clampStr(searchParams.get("country") || "world", 30); // accepted + echoed only
   const pageSize = Math.max(1, Math.min(50, Number(searchParams.get("pageSize") || "30")));
 
   const finnhubCategory = FINNHUB_CATEGORY_MAP[categoryKey] ?? "general";
@@ -161,19 +220,13 @@ export async function GET(req: Request) {
     "https://finnhub.io/api/v1/news?" +
     new URLSearchParams({ category: finnhubCategory, token: apiKey }).toString();
 
-  const res = await fetch(url, { next: { revalidate: 60 } }); // protect quota
+  const res = await fetch(url, { next: { revalidate: 60 } });
   const j = await res.json().catch(() => null);
-
   if (!res.ok) {
-    return NextResponse.json(
-      { error: (j as any)?.error || "News fetch failed" },
-      { status: res.status }
-    );
+    return NextResponse.json({ error: (j as any)?.error || "News fetch failed" }, { status: res.status });
   }
 
-  const raw = Array.isArray(j) ? j : [];
-
-  let items = raw.map((a: any) => ({
+  let items = (Array.isArray(j) ? j : []).map((a: any) => ({
     title: String(a?.headline ?? ""),
     source: String(a?.source ?? ""),
     url: String(a?.url ?? ""),
@@ -182,94 +235,59 @@ export async function GET(req: Request) {
     description: String(a?.summary ?? ""),
   }));
 
-  // Optional time window filter (UI hours dropdown)
+  // Optional time window filter
   const windowMs = parseHoursToMs(hoursRaw);
   if (windowMs > 0) {
     const now = Date.now();
     const cutoff = now - windowMs;
     items = items.filter((it) => {
       const t = isoToMs(it.publishedAt);
-      return t === 0 ? true : t >= cutoff; // if no date, keep (don’t accidentally nuke)
+      return t === 0 ? true : t >= cutoff;
     });
   }
 
-  // Decide mode (matches your UI type)
-  const mode: "top" | "everything" = rawQ.trim() ? "everything" : "top";
+  const q = rawQ.trim();
+  const mode: "top" | "everything" = q ? "everything" : "top";
 
-  // If NO q: default is latest.
-  // BUT for preset categories (japan/crypto/forex), we still filter using expanded needles,
-  // otherwise "Japan" looks like it does nothing.
-  const isPresetCategory = categoryKey === "japan" || categoryKey === "crypto" || categoryKey === "forex";
-
-  if (!rawQ.trim() && !isPresetCategory) {
-    items = items
+  // If no q: just return latest (no filtering)
+  if (!q) {
+    const latest = items
       .filter((it) => it.url && it.title)
-      .sort((a, b) => {
-        const ap = a.publishedAt || "0000";
-        const bp = b.publishedAt || "0000";
-        return bp.localeCompare(ap);
-      })
+      .sort((a, b) => (b.publishedAt || "0000").localeCompare(a.publishedAt || "0000"))
       .slice(0, pageSize);
 
-    return NextResponse.json({
-      ok: true,
-      mode,
-      country,
-      category: categoryKey,
-      q: rawQ,
-      items,
-    });
+    return NextResponse.json({ ok: true, provider: "finnhub", mode, country, category: categoryKey, q, items: latest });
   }
 
-  // Advanced filtering when q exists OR preset category selected (even if q is empty)
-  const built = buildNeedles(rawQ);
+  // Strict filtering when q exists
+  const built = buildNeedles(q);
   const needles = expandNeedles(categoryKey, built.needles);
 
-  const orMode = built.mode === "or";
-  const loosened = isPresetCategory || orMode;
-
-  // Strictness:
-  // - presets + OR: allow 1 match (higher recall)
-  // - everything else: require 2 matches (higher precision)
-  const minMatches = loosened ? 1 : 3;
-
-  // If q is empty and needles came only from preset expansion,
-  // we still score/filter so Japan/Crypto/FX works as a “topic preset”.
-  let scored = items
+  // STRICT RULE (fixes “everything shows”):
+  // Pass if either:
+  //   (A) titleMatches >= 1 AND total matches >= 2
+  //   (B) total matches >= 3
+  const scored = items
     .map((it) => {
-      const { score, matches } = scoreItem(it.title, it.description, it.source, needles);
-      return { ...it, _score: score, _matches: matches };
+      const r = scoreItem(it.title, it.description, it.source, needles);
+      return { ...it, _score: r.score, _matches: r.matches, _titleMatches: r.titleMatches };
     })
-    .filter((it: any) => it.url && it.title && it._matches >= minMatches && it._score >= 4);
-
-  // Sort handling:
-  // - publishedAt: newest
-  // - relevancy/popularity: score first then newest (popularity not available on Finnhub)
-  if (sort === "publishedAt") {
-    scored = scored.sort((a: any, b: any) => {
-      const ap = a.publishedAt || "0000";
-      const bp = b.publishedAt || "0000";
-      return bp.localeCompare(ap);
-    });
-  } else {
-    scored = scored.sort((a: any, b: any) => {
+    .filter((it: any) => {
+      if (!it.url || !it.title) return false;
+      const A = it._titleMatches >= 1 && it._matches >= 2;
+      const B = it._matches >= 3;
+      return (A || B) && it._score >= 8;
+    })
+    .sort((a: any, b: any) => {
+      if (sort === "publishedAt") {
+        return (b.publishedAt || "0000").localeCompare(a.publishedAt || "0000");
+      }
+      // relevancy/popularity => score then newest
       if (b._score !== a._score) return b._score - a._score;
-      const ap = a.publishedAt || "0000";
-      const bp = b.publishedAt || "0000";
-      return bp.localeCompare(ap);
-    });
-  }
+      return (b.publishedAt || "0000").localeCompare(a.publishedAt || "0000");
+    })
+    .slice(0, pageSize)
+    .map(({ _score, _matches, _titleMatches, ...rest }: any) => rest);
 
-  const finalItems = scored
-    .map(({ _score, _matches, ...rest }: any) => rest)
-    .slice(0, pageSize);
-
-  return NextResponse.json({
-    ok: true,
-    mode: rawQ.trim() ? "everything" : "top",
-    country,
-    category: categoryKey,
-    q: rawQ,
-    items: finalItems,
-  });
+  return NextResponse.json({ ok: true, provider: "finnhub", mode, country, category: categoryKey, q, items: scored });
 }

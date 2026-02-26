@@ -1,7 +1,7 @@
 // app/news/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 type NewsItem = {
@@ -12,12 +12,6 @@ type NewsItem = {
   publishedAt: string;
   description: string;
 };
-
-const CATEGORY_OPTIONS = [
-  { key: "general", label: "Top" },
-  { key: "business", label: "Business" },
-  { key: "technology", label: "Tech" }, // UI label; mapped to API
-];
 
 const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string }[] = [
   { key: "top", label: "📰 Top", q: "market OR stocks OR economy OR earnings OR inflation OR rates" },
@@ -42,11 +36,12 @@ const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string 
   { key: "culture", label: "🎭 Culture", q: "culture OR entertainment OR film OR music OR celebrity" },
   { key: "sports", label: "🏟️ Sports", q: "sports OR tournament OR league OR match" },
 
+  // Special sentinel -> route to /api/news-jp (Japanese-language feed)
   { key: "jp_ja", label: "🇯🇵 日本語", q: "__JP_JA__" },
 ];
 
 function mapUiCategoryToApi(cat: string) {
-  // matches your /api/news route mapping keys
+  // matches your /api/news mapping keys
   if (cat === "technology") return "tech";
   return cat;
 }
@@ -57,45 +52,44 @@ export default function NewsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
-
   const [category, setCategory] = useState("general");
   const [q, setQ] = useState("");
 
-  const apiCategory = useMemo(() => mapUiCategoryToApi(category), [category]);
-
   async function load(next?: { category?: string; q?: string }) {
-    const nextCategory = typeof next?.category === "string" ? next!.category! : category;
-    const nextQ = typeof next?.q === "string" ? next!.q! : q;
+    const nextCategory = typeof next?.category === "string" ? next.category : category;
+    const nextQ = typeof next?.q === "string" ? next.q : q;
 
     setLoading(true);
     setErr(null);
 
     try {
-      const sp = new URLSearchParams();
-      sp.set("category", mapUiCategoryToApi(nextCategory));
-      if (nextQ.trim()) sp.set("q", nextQ.trim());
-      sp.set("pageSize", "30");
+      const isJapaneseFeed = nextQ.trim() === "__JP_JA__";
 
-      const isJapaneseFeed = nextQ.trim() === "__JP_JA__" || q.trim() === "__JP_JA__";
+      const url = isJapaneseFeed
+        ? `/api/news-jp?pageSize=30`
+        : (() => {
+            const sp = new URLSearchParams();
+            sp.set("category", mapUiCategoryToApi(nextCategory));
+            if (nextQ.trim()) sp.set("q", nextQ.trim());
+            sp.set("pageSize", "30");
+            return `/api/news?${sp.toString()}`;
+          })();
 
-const res = await fetch(
-  isJapaneseFeed
-    ? `/api/news-jp?pageSize=30`
-    : `/api/news?${sp.toString()}`,
-  { cache: "no-store" }
-);
+      const res = await fetch(url, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to load news");
 
       const incoming: NewsItem[] = Array.isArray(json?.items) ? json.items : [];
-setItems((prev) => {
-  const seen = new Set(prev.map((x) => x.url));
-  const merged = [...prev];
-  for (const it of incoming) {
-    if (it?.url && !seen.has(it.url)) merged.push(it);
-  }
-  return merged;
-});
+
+      // Dedupe by URL so refresh/preset doesn't spam duplicates
+      setItems((prev) => {
+        const seen = new Set(prev.map((x) => x.url));
+        const merged = [...prev];
+        for (const it of incoming) {
+          if (it?.url && !seen.has(it.url)) merged.push(it);
+        }
+        return merged;
+      });
     } catch (e: any) {
       setItems([]);
       setErr(e?.message || "Failed to load news");
@@ -197,14 +191,14 @@ setItems((prev) => {
                 type="button"
                 onClick={() => {
                   setFiltersOpen(false);
-                  load();
+                  setItems([]); // important: new topic should replace list, not merge into old topic results
+                  load({ category, q });
                 }}
                 className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white hover:opacity-95"
               >
                 Apply
               </button>
             </div>
-
           </div>
         ) : null}
 
@@ -212,54 +206,54 @@ setItems((prev) => {
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Top news</div>
-            <div className="text-xs text-[#6B7A74]">{items.length} items</div>
+            <div className="text-xs text-[#6B7A74]">{loading ? "Loading…" : `${items.length} items`}</div>
           </div>
 
           {err ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {err}
+            </div>
           ) : null}
 
-          {loading ? (
-            <div className="mt-4 text-sm text-[#6B7A74]">Loading…</div>
-          ) : items.length === 0 ? (
+          {!loading && items.length === 0 ? (
             <div className="mt-8 text-sm text-[#6B7A74]">No results.</div>
-          ) : (
-            <div className="mt-4 space-y-4">
-              {items.map((it, idx) => (
-                <a
-                  key={`${it.url}-${idx}`}
-                  href={it.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 hover:shadow-sm"
-                >
-                  <div className="flex items-start gap-4">
-                    {it.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={it.image}
-                        alt=""
-                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
-                      />
-                    ) : null}
+          ) : null}
 
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold leading-snug">{it.title}</div>
+          <div className="mt-4 space-y-4">
+            {items.map((it, idx) => (
+              <a
+                key={`${it.url}-${idx}`}
+                href={it.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 hover:shadow-sm"
+              >
+                <div className="flex items-start gap-4">
+                  {it.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={it.image}
+                      alt=""
+                      className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                    />
+                  ) : null}
 
-                      <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7A74]">
-                        <span>{it.source || "Unknown"}</span>
-                        {it.publishedAt ? <span>• {new Date(it.publishedAt).toLocaleString()}</span> : null}
-                      </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold leading-snug">{it.title}</div>
 
-                      {it.description ? (
-                        <div className="mt-2 line-clamp-2 text-sm text-[#4B5B55]">{it.description}</div>
-                      ) : null}
+                    <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7A74]">
+                      <span>{it.source || "Unknown"}</span>
+                      {it.publishedAt ? <span>• {new Date(it.publishedAt).toLocaleString()}</span> : null}
                     </div>
+
+                    {it.description ? (
+                      <div className="mt-2 line-clamp-2 text-sm text-[#4B5B55]">{it.description}</div>
+                    ) : null}
                   </div>
-                </a>
-              ))}
-            </div>
-          )}
+                </div>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </main>
