@@ -231,7 +231,7 @@ export async function GET(req: Request) {
   // Strictness:
   // - presets + OR: allow 1 match (higher recall)
   // - everything else: require 2 matches (higher precision)
-  const minMatches = loosened ? 1 : 2;
+  const minMatches = loosened ? 1 : 3;
 
   // If q is empty and needles came only from preset expansion,
   // we still score/filter so Japan/Crypto/FX works as a “topic preset”.
@@ -240,7 +240,7 @@ export async function GET(req: Request) {
       const { score, matches } = scoreItem(it.title, it.description, it.source, needles);
       return { ...it, _score: score, _matches: matches };
     })
-    .filter((it: any) => it.url && it.title && it._matches >= minMatches && it._score > 0);
+    .filter((it: any) => it.url && it.title && it._matches >= minMatches && it._score >= 4);
 
   // Sort handling:
   // - publishedAt: newest
