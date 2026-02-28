@@ -1,7 +1,4 @@
-<<<<<<< HEAD
 // app/feed/layout.tsx
-=======
->>>>>>> 4b9118a (ui: sidebar regions + news link; remove menu)
 import { Suspense } from "react";
 import FeedLayoutClient from "./FeedLayoutClient";
 
