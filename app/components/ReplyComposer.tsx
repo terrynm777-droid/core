@@ -1,5 +1,7 @@
+// app/components/ReplyComposer.tsx
 "use client";
 
+import { useState } from "react";
 import { useAttachments } from "@/app/components/useAttachments";
 
 type Attachment = { kind: "image" | "video"; url: string; name?: string };
@@ -12,6 +14,8 @@ export default function ReplyComposer({
   onSubmit: (text: string, attachments?: Attachment[]) => void | Promise<void>;
 }) {
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
   const {
     attachments,
     uploading,
@@ -24,11 +28,28 @@ export default function ReplyComposer({
   } = useAttachments();
 
   async function submit() {
+    if (sending || uploading) return;
+
     const trimmed = text.trim();
-    if (!trimmed) return;
-    await onSubmit(trimmed, attachments);
+    if (!trimmed && attachments.length === 0) return;
+
+    const snapshotText = trimmed;
+    const snapshotAtt = attachments;
+
+    // optimistic clear + disable
+    setSending(true);
     setText("");
     setAttachments([]);
+
+    try {
+      await onSubmit(snapshotText, snapshotAtt);
+    } catch {
+      // restore if needed
+      setText(snapshotText);
+      setAttachments(snapshotAtt);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -44,16 +65,12 @@ export default function ReplyComposer({
         className="min-h-[72px] w-full resize-none rounded-2xl border border-[#D7E4DD] bg-white p-3 text-sm outline-none"
       />
 
-      {/* ✅ picker row */}
       <div className="mt-2 flex items-center gap-2">
         <AttachmentButton />
         <AttachmentInput />
-        <div className="text-xs text-[#6B7A74]">
-          {uploading ? "Uploading…" : null}
-        </div>
+        <div className="text-xs text-[#6B7A74]">{uploading ? "Uploading…" : null}</div>
       </div>
 
-      {/* ✅ preview INSIDE bubble */}
       {attachments.length ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {attachments.map((a) => (
@@ -74,6 +91,7 @@ export default function ReplyComposer({
                 type="button"
                 onClick={() => removeAttachment(a.url)}
                 className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
+                disabled={sending || uploading}
               >
                 ×
               </button>
@@ -87,14 +105,12 @@ export default function ReplyComposer({
         <button
           type="button"
           onClick={submit}
-          disabled={!text.trim() || uploading}
+          disabled={sending || uploading || (!text.trim() && attachments.length === 0)}
           className="rounded-xl bg-[#22C55E] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          Post
+          {sending ? "Posting…" : "Post"}
         </button>
       </div>
     </div>
   );
 }
-
-import { useState } from "react";

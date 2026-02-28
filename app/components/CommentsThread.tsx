@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ReplyComposer from "@/app/components/ReplyComposer";
-
 import LinkPreview from "@/app/components/LinkPreview";
 import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
 
@@ -17,6 +16,8 @@ type Author =
     }
   | null;
 
+type Attachment = { kind: "image" | "video"; url: string; name?: string };
+
 type Comment = {
   id: string;
   post_id: string;
@@ -24,10 +25,9 @@ type Comment = {
   body: string;
   created_at: string;
   parent_comment_id: string | null;
+  attachments?: Attachment[] | null;
   author?: Author;
 };
-
-type Attachment = { kind: "image" | "video"; url: string };
 
 function Avatar({ url, label }: { url?: string | null; label: string }) {
   const [broken, setBroken] = useState(false);
@@ -57,13 +57,11 @@ function AuthorLine({ author }: { author?: Author }) {
   const username = author?.username ?? "unknown";
   const display = author?.display_name ?? null;
   const label = display ? `${display}` : `@${username}`;
-
   const href = author?.username ? `/u/${encodeURIComponent(author.username)}` : "#";
 
   return (
     <div className="flex items-center gap-2">
       <Avatar url={author?.avatar_url} label={username} />
-
       {author?.username ? (
         <Link href={href} className="font-medium hover:underline">
           {label}
@@ -72,6 +70,33 @@ function AuthorLine({ author }: { author?: Author }) {
       ) : (
         <span className="font-medium">@{username}</span>
       )}
+    </div>
+  );
+}
+
+function AttachmentsRow({ atts }: { atts?: Attachment[] | null }) {
+  if (!Array.isArray(atts) || atts.length === 0) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {atts.map((a) => (
+        <div key={a.url} className="relative">
+          {a.kind === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={a.url}
+              alt={a.name || ""}
+              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+            />
+          ) : (
+            <video
+              src={a.url}
+              controls
+              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+            />
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -106,16 +131,16 @@ export default function CommentsThread({
     setErrorMsg(null);
 
     try {
-      const res = await fetch(
-        `/api/posts/${encodeURIComponent(postId)}/comments?limit=50&offset=0`,
-        { cache: "no-store", credentials: "include" }
-      );
+      const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments?limit=50&offset=0`, {
+        cache: "no-store",
+        credentials: "include",
+      });
 
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
 
       setComments(Array.isArray(json?.comments) ? json.comments : []);
-      setTotal(typeof json?.total === "number" ? json.total : (json?.comments?.length ?? 0));
+      setTotal(typeof json?.total === "number" ? json.total : json?.comments?.length ?? 0);
       setLoadedOnce(true);
     } catch (e: any) {
       setErrorMsg(e?.message || "Failed to load comments");
@@ -127,37 +152,32 @@ export default function CommentsThread({
   async function submitTopLevel(text: string, attachments?: Attachment[]) {
     setErrorMsg(null);
 
-    try {
-      const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text, attachments: attachments ?? [] }),
-        credentials: "include",
-      });
+    const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: text, attachments: attachments ?? [] }),
+      credentials: "include",
+    });
 
-      const json = await res.json().catch(() => null);
+    const json = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        setErrorMsg(json?.error || `HTTP ${res.status}`);
-        return;
-      }
-
-      const created = json?.comment as Comment | undefined;
-
-      if (created?.id) {
-        setComments((prev) => [...prev, created]);
-        setTotal((t) => t + 1);
-        onCommentCreated?.();
-      } else {
-        await loadComments();
-        onCommentCreated?.();
-      }
-
-      setShowComments(true);
-      setLoadedOnce(true);
-    } catch (e: any) {
-      setErrorMsg(e?.message || "Network error");
+    if (!res.ok) {
+      setErrorMsg(json?.error || `HTTP ${res.status}`);
+      throw new Error(json?.error || "Failed");
     }
+
+    const created = json?.comment as Comment | undefined;
+
+    if (created?.id) {
+      setComments((prev) => [...prev, created]);
+      setTotal((t) => t + 1);
+    } else {
+      await loadComments();
+    }
+
+    setShowComments(true);
+    setLoadedOnce(true);
+    onCommentCreated?.();
   }
 
   useEffect(() => {
@@ -205,6 +225,7 @@ export default function CommentsThread({
 
                 <div className="mt-2 whitespace-pre-wrap text-sm">{renderWithLinks(c.body)}</div>
                 <LinkPreview url={firstUrl(c.body)} />
+                <AttachmentsRow atts={c.attachments} />
               </div>
             ))
           )}

@@ -1,11 +1,11 @@
+// app/api/posts/[postId]/comments/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Params = { postId: string };
-type Ctx = { params: Promise<Params> };
+type Ctx = { params: Promise<{ postId: string }> };
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +16,8 @@ const corsHeaders: Record<string, string> = {
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
+
+type Attachment = { kind: "image" | "video"; url: string; name?: string };
 
 type Profile = {
   id: string;
@@ -31,17 +33,37 @@ type CommentRow = {
   body: string;
   created_at: string;
   parent_comment_id: string | null;
+  attachments: unknown;
 };
 
-export async function GET(req: NextRequest, { params }: Ctx) {
-  const { postId } = await params;
+function parseAttachments(raw: unknown): Attachment[] {
+  if (!Array.isArray(raw)) return [];
+
+  return (raw as unknown[])
+    .map((x): Attachment | null => {
+      if (typeof x !== "object" || x === null) return null;
+      const a = x as { kind?: unknown; url?: unknown; name?: unknown };
+
+      const url = typeof a.url === "string" ? a.url : String(a.url ?? "");
+      if (!url) return null;
+
+      const kind: Attachment["kind"] = a.kind === "video" ? "video" : "image";
+      const name =
+        typeof a.name === "string" ? a.name : a.name != null ? String(a.name) : undefined;
+
+      return { kind, url, name };
+    })
+    .filter((a): a is Attachment => a !== null);
+}
+
+export async function GET(req: NextRequest, context: Ctx) {
+  const { postId } = await context.params;
   const supabase = await createClient();
 
   const url = new URL(req.url);
   const limit = Math.min(Number(url.searchParams.get("limit") ?? "20"), 50);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? "0"), 0);
 
-  // total count (top-level only)
   const { count, error: countErr } = await supabase
     .from("post_comments")
     .select("id", { count: "exact", head: true })
@@ -52,10 +74,9 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: countErr.message }, { status: 500, headers: corsHeaders });
   }
 
-  // rows
   const { data: rows, error: rowsErr } = await supabase
     .from("post_comments")
-    .select("id, post_id, user_id, body, created_at, parent_comment_id")
+    .select("id, post_id, user_id, body, created_at, parent_comment_id, attachments")
     .eq("post_id", postId)
     .is("parent_comment_id", null)
     .order("created_at", { ascending: true })
@@ -65,9 +86,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: rowsErr.message }, { status: 500, headers: corsHeaders });
   }
 
-  const commentsRaw = (rows ?? []) as CommentRow[];
-
-  // profiles for user_ids (NO relational select to avoid schema-cache relationship issues)
+  const commentsRaw = (rows ?? []) as unknown as CommentRow[];
   const userIds = Array.from(new Set(commentsRaw.map((c) => c.user_id))).filter(Boolean);
 
   const profilesById = new Map<string, Profile>();
@@ -92,7 +111,13 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   }
 
   const comments = commentsRaw.map((c) => ({
-    ...c,
+    id: c.id,
+    post_id: c.post_id,
+    user_id: c.user_id,
+    body: c.body,
+    created_at: c.created_at,
+    parent_comment_id: c.parent_comment_id,
+    attachments: parseAttachments(c.attachments),
     author:
       profilesById.get(c.user_id) ?? {
         id: c.user_id,
@@ -102,11 +127,14 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       },
   }));
 
-  return NextResponse.json({ comments, total: count ?? 0, limit, offset }, { status: 200, headers: corsHeaders });
+  return NextResponse.json(
+    { comments, total: count ?? 0, limit, offset },
+    { status: 200, headers: corsHeaders }
+  );
 }
 
-export async function POST(req: NextRequest, { params }: Ctx) {
-  const { postId } = await params;
+export async function POST(req: NextRequest, context: Ctx) {
+  const { postId } = await context.params;
   const supabase = await createClient();
 
   const { data: auth, error: authErr } = await supabase.auth.getUser();
@@ -117,13 +145,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
 
   const payload = (await req.json().catch(() => null)) as
-    | { body?: string; parent_comment_id?: string | null }
+    | { body?: string; parent_comment_id?: string | null; attachments?: unknown }
     | null;
 
   const text = payload?.body?.trim() ?? "";
   const parent_comment_id = payload?.parent_comment_id ?? null;
+  const attachments = parseAttachments(payload?.attachments);
 
-  if (!text) {
+  if (!text && attachments.length === 0) {
     return NextResponse.json({ error: "body is required" }, { status: 400, headers: corsHeaders });
   }
   if (text.length > 5000) {
@@ -137,8 +166,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       user_id: user.id,
       body: text,
       parent_comment_id,
+      attachments,
     })
-    .select("id, post_id, user_id, body, created_at, parent_comment_id")
+    .select("id, post_id, user_id, body, created_at, parent_comment_id, attachments")
     .single();
 
   if (insErr) {
@@ -156,7 +186,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
 
   const comment = {
-    ...(inserted as any),
+    id: (inserted as any).id as string,
+    post_id: (inserted as any).post_id as string,
+    user_id: (inserted as any).user_id as string,
+    body: (inserted as any).body as string,
+    created_at: (inserted as any).created_at as string,
+    parent_comment_id: (inserted as any).parent_comment_id as string | null,
+    attachments: parseAttachments((inserted as any).attachments),
     author: prof
       ? {
           id: prof.id,

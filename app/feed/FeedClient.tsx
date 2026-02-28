@@ -22,8 +22,6 @@ type ApiPost = {
     avatarUrl: string | null;
     traderStyle: string | null;
   } | null;
-
-  // keep optional so you don't break if API doesn't return it yet
   attachments?: Attachment[] | null;
 };
 
@@ -74,6 +72,8 @@ export default function FeedClient() {
     onDragOver,
   } = useAttachments();
 
+  const inFlightRef = useRef(false);
+
   // search
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -117,21 +117,25 @@ export default function FeedClient() {
   }, [feed]);
 
   async function createPost() {
-    const text = content.trim();
-    if (!text) return;
+    if (inFlightRef.current || posting || uploading) return;
 
-    setErr(null);
+    const text = content.trim();
+    if (!text && attachments.length === 0) return;
+
+    // anti-duplicate: lock immediately + clear UI immediately
+    inFlightRef.current = true;
     setPosting(true);
+    setErr(null);
+
+    const payload = { content: text, feed, attachments };
+    setContent("");
+    setAttachments([]);
 
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: text,
-          feed,
-          attachments,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json().catch(() => null);
@@ -143,13 +147,14 @@ export default function FeedClient() {
       } else {
         await loadPosts();
       }
-
-      setContent("");
-      setAttachments([]);
     } catch (e: any) {
+      // restore composer on failure
+      setContent(payload.content);
+      setAttachments(payload.attachments);
       setErr(e?.message || "Failed to post");
     } finally {
       setPosting(false);
+      inFlightRef.current = false;
     }
   }
 
@@ -299,7 +304,9 @@ export default function FeedClient() {
                         }}
                         className="w-full px-4 py-3 text-left hover:bg-[#F7FAF8]"
                       >
-                        <div className="text-sm font-semibold">{String(h.symbol || "").toUpperCase()}</div>
+                        <div className="text-sm font-semibold">
+                          {String(h.symbol || "").toUpperCase()}
+                        </div>
                         {h.name ? <div className="text-xs text-[#6B7A74]">{h.name}</div> : null}
                       </button>
                     ))}
@@ -363,7 +370,6 @@ export default function FeedClient() {
             {uploading ? <div className="text-xs text-[#6B7A74]">Uploading…</div> : null}
           </div>
 
-          {/* preview inside composer */}
           {attachments.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
               {attachments.map((a) => (
@@ -376,14 +382,18 @@ export default function FeedClient() {
                       className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
                     />
                   ) : (
-                    <div className="h-16 w-24 rounded-xl border border-[#D7E4DD] bg-white flex items-center justify-center text-[10px] text-[#6B7A74]">
-                      Video
-                    </div>
+                    <video
+                      src={a.url}
+                      className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                      muted
+                      playsInline
+                    />
                   )}
                   <button
                     type="button"
                     onClick={() => removeAttachment(a.url)}
                     className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
+                    disabled={posting || uploading}
                   >
                     ×
                   </button>
@@ -409,7 +419,7 @@ export default function FeedClient() {
               <button
                 type="button"
                 onClick={createPost}
-                disabled={posting || !content.trim() || uploading}
+                disabled={posting || uploading || (!content.trim() && attachments.length === 0)}
                 className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {posting ? "Posting…" : "Post"}
@@ -461,7 +471,6 @@ export default function FeedClient() {
 
                   {url ? <LinkPreview url={url} /> : null}
 
-                  {/* post attachments (only if API starts returning them) */}
                   {Array.isArray(p.attachments) && p.attachments.length ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {p.attachments.map((a) => (

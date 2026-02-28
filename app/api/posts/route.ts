@@ -1,7 +1,14 @@
+// app/api/posts/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Attachment = { kind: "image" | "video"; url: string; name?: string };
+
 type Profile = {
+  id: string;
   username: string | null;
   avatar_url: string | null;
   bio: string | null;
@@ -15,6 +22,7 @@ type PostRow = {
   author_id: string | null;
   feed: string | null;
   comments_count: number | null;
+  attachments: unknown;
   author: Profile | Profile[] | null;
 };
 
@@ -28,6 +36,27 @@ function normFeed(x: unknown): "en" | "ja" {
   return x === "ja" ? "ja" : "en";
 }
 
+// use this EXACT parseAttachments in BOTH files
+
+function parseAttachments(raw: unknown): Attachment[] {
+  if (!Array.isArray(raw)) return [];
+
+  return (raw as unknown[])
+    .map((x): Attachment | null => {
+      if (typeof x !== "object" || x === null) return null;
+      const a = x as { kind?: unknown; url?: unknown; name?: unknown };
+
+      const url = typeof a.url === "string" ? a.url : String(a.url ?? "");
+      if (!url) return null;
+
+      const kind: Attachment["kind"] = a.kind === "video" ? "video" : "image";
+      const name = typeof a.name === "string" ? a.name : a.name != null ? String(a.name) : undefined;
+
+      return { kind, url, name };
+    })
+    .filter((a): a is Attachment => a !== null);
+}
+
 function toApiPost(row: PostRow) {
   const profile = pickProfile(row.author);
 
@@ -36,9 +65,11 @@ function toApiPost(row: PostRow) {
     content: row.content,
     createdAt: row.created_at,
     commentsCount: row.comments_count ?? 0,
+    attachments: parseAttachments(row.attachments),
     authorId: row.author_id,
     profile: profile
       ? {
+          id: profile.id,
           username: profile.username,
           avatarUrl: profile.avatar_url,
           bio: profile.bio,
@@ -55,7 +86,9 @@ const SELECT_WITH_PROFILE = `
   author_id,
   feed,
   comments_count,
+  attachments,
   author:profiles!posts_author_id_fkey(
+    id,
     username,
     avatar_url,
     bio,
@@ -76,8 +109,7 @@ export async function GET(req: Request) {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json(
     { posts: (data ?? []).map((r) => toApiPost(r as unknown as PostRow)) },
@@ -92,17 +124,17 @@ export async function POST(req: Request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user)
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const body = await req.json();
+  const body = (await req.json().catch(() => null)) as any;
 
-  const content = body?.content?.trim();
+  const content = String(body?.content ?? "").trim();
   const feed = normFeed(body?.feed);
-  const attachments = body?.attachments ?? null;
+  const attachments = parseAttachments(body?.attachments);
 
-  if (!content)
+  if (!content && attachments.length === 0) {
     return NextResponse.json({ error: "content is required" }, { status: 400 });
+  }
 
   const { data, error } = await supabase
     .from("posts")
@@ -111,15 +143,12 @@ export async function POST(req: Request) {
       feed,
       author_id: user.id,
       attachments,
+      comments_count: 0,
     })
     .select(SELECT_WITH_PROFILE)
     .single();
 
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json(
-    { post: toApiPost(data as unknown as PostRow) },
-    { status: 201 }
-  );
+  return NextResponse.json({ post: toApiPost(data as unknown as PostRow) }, { status: 201 });
 }
