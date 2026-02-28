@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ReplyComposer from "@/app/components/ReplyComposer";
 
+// ✅ add
+import LinkPreview from "@/app/components/LinkPreview";
+import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
+
 type Author =
   | {
       id: string;
@@ -22,6 +26,9 @@ type Comment = {
   parent_comment_id: string | null;
   author?: Author;
 };
+
+// ✅ add (attachments payload type)
+type Attachment = { kind: "image" | "video"; url: string };
 
 function Avatar({ url, label }: { url?: string | null; label: string }) {
   const [broken, setBroken] = useState(false);
@@ -51,8 +58,6 @@ function AuthorLine({ author }: { author?: Author }) {
   const display = author?.display_name ?? null;
   const label = display ? `${display}` : `@${username}`;
 
-  // Pick ONE route pattern and stick to it.
-  // If you don’t have profile pages yet, keep /settings/profile for now or make /u/[username] later.
   const href = author?.username ? `/u/${encodeURIComponent(author.username)}` : "#";
 
   return (
@@ -117,14 +122,16 @@ export default function CommentsThread({
     }
   }
 
-  async function submitTopLevel(text: string) {
+  // ✅ changed signature: attachments optional, backward-compatible
+  async function submitTopLevel(text: string, attachments?: Attachment[]) {
     setErrorMsg(null);
 
     try {
       const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        // ✅ add attachments (backend can ignore if not implemented yet)
+        body: JSON.stringify({ body: text, attachments: attachments ?? [] }),
         credentials: "include",
       });
 
@@ -160,6 +167,7 @@ export default function CommentsThread({
 
   return (
     <div className="mt-2 rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-3">
+      {/* ✅ ReplyComposer now supports attachments and calls onSubmit(text, attachments) */}
       <ReplyComposer placeholder="Write a comment…" onSubmit={submitTopLevel} />
 
       <div className="mt-2 flex items-center justify-between">
@@ -194,7 +202,11 @@ export default function CommentsThread({
                   <span>{new Date(c.created_at).toLocaleString()}</span>
                 </div>
 
-                <div className="mt-2 whitespace-pre-wrap text-sm">{c.body}</div>
+                {/* ✅ linkify + preview (no UI removal) */}
+                <div className="mt-2 whitespace-pre-wrap text-sm">
+                  {renderWithLinks(c.body)}
+                </div>
+                <LinkPreview url={firstUrl(c.body)} />
               </div>
             ))
           )}

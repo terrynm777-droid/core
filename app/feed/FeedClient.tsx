@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import AvatarMenu from "@/app/components/AvatarMenu";
 import PostActions from "@/app/components/PostActions";
 
@@ -10,6 +10,7 @@ type ApiPost = {
   id: string;
   content: string;
   createdAt: string;
+   commentsCount?: number; // ✅ ADD
   profile: {
     id: string | null;
     username: string | null;
@@ -46,6 +47,8 @@ function stockHref(symbol: string) {
 
 export default function FeedClient() {
   const router = useRouter();
+  const sp = useSearchParams();
+  const feed = (sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja";
 
   const [posts, setPosts] = useState<ApiPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +82,7 @@ export default function FeedClient() {
     setErr(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/posts", { cache: "no-store" });
+      const res = await fetch(`/api/posts?feed=${feed}`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to load feed");
       setPosts(Array.isArray(json?.posts) ? json.posts : []);
@@ -92,8 +95,10 @@ export default function FeedClient() {
 
   useEffect(() => {
     loadMe();
+    setPosts([]);
     loadPosts();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed]);
 
   async function createPost() {
     const text = content.trim();
@@ -101,18 +106,26 @@ export default function FeedClient() {
 
     setErr(null);
     setPosting(true);
+
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({
+          content: text,
+          feed, // "en" | "ja"
+        }),
       });
+
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to post");
 
-      const newPost = json?.post as ApiPost | undefined;
-      if (newPost?.id) setPosts((prev) => [newPost, ...prev]);
-      else await loadPosts();
+      const newPost = json?.post;
+      if (newPost?.id) {
+        setPosts((prev) => [newPost, ...prev]);
+      } else {
+        await loadPosts();
+      }
 
       setContent("");
     } catch (e: any) {
@@ -337,7 +350,6 @@ export default function FeedClient() {
             <span>{content.length}/20000</span>
 
             <div className="flex items-center gap-3">
-
               {me?.username ? (
                 <Link href={`/u/${encodeURIComponent(me.username)}`} className="hover:underline">
                   Posting as @{me.username}
@@ -348,13 +360,12 @@ export default function FeedClient() {
                 </Link>
               )}
 
-                
-                 <button
-                  type="button"
-                  onClick={createPost}
-                  disabled={posting || !content.trim()}
-                  className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
-                  >
+              <button
+                type="button"
+                onClick={createPost}
+                disabled={posting || !content.trim()}
+                className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
                 {posting ? "Posting…" : "Post"}
               </button>
             </div>
@@ -403,7 +414,10 @@ export default function FeedClient() {
 
                   <div className="mt-3 whitespace-pre-wrap text-sm">{p.content}</div>
 
-                  <PostActions postId={p.id} />
+                  <PostActions
+  postId={p.id}
+  commentsCount={p.commentsCount ?? 0}
+/>
                 </div>
               );
             })}

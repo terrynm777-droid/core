@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import FeedClient from "./FeedClient";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export default async function FeedPage() {
   const supabase = await createClient();

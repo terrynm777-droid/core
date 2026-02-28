@@ -34,14 +34,23 @@ function IconComment() {
   );
 }
 
-export default function PostActions({ postId }: { postId: string }) {
+export default function PostActions({
+  postId,
+  commentsCount = 0,
+}: {
+  postId: string;
+  commentsCount?: number;
+}) {
   const [likeCount, setLikeCount] = useState(0);
   const [liked, setLiked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
   async function loadLike() {
-    const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/like`, { cache: "no-store" });
+    const res = await fetch(
+      `/api/posts/${encodeURIComponent(postId)}/like`,
+      { cache: "no-store" }
+    );
     const json = await res.json().catch(() => null);
     if (!res.ok) return;
     setLiked(!!json?.liked);
@@ -50,25 +59,25 @@ export default function PostActions({ postId }: { postId: string }) {
 
   useEffect(() => {
     loadLike();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
   async function toggleLike() {
     if (busy) return;
     setBusy(true);
 
-    // optimistic
     const nextLiked = !liked;
     setLiked(nextLiked);
     setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
 
     try {
-      const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/like`, { method: "POST" });
+      const res = await fetch(
+        `/api/posts/${encodeURIComponent(postId)}/like`,
+        { method: "POST" }
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to like");
       await loadLike();
     } catch {
-      // rollback if failed
       setLiked((v) => !v);
       setLikeCount((c) => c + (liked ? 1 : -1));
     } finally {
@@ -78,7 +87,6 @@ export default function PostActions({ postId }: { postId: string }) {
 
   return (
     <div className="mt-4">
-      {/* LinkedIn-style action row */}
       <div className="flex items-center justify-between border-t border-[#E6EFEA] pt-2">
         <button
           type="button"
@@ -98,6 +106,9 @@ export default function PostActions({ postId }: { postId: string }) {
         >
           <IconComment />
           <span>Comment</span>
+          {commentsCount ? (
+            <span className="text-xs text-[#6B7A74]">{commentsCount}</span>
+          ) : null}
         </button>
       </div>
 

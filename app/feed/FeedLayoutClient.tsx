@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-export default function FeedLayout({ children }: { children: React.ReactNode }) {
+export default function FeedLayoutClient({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const pathname = usePathname();
@@ -69,7 +69,6 @@ export default function FeedLayout({ children }: { children: React.ReactNode }) 
               </Link>
             </div>
 
-            {/* OPTIONAL: keep Menu here too if you want */}
             <div className="mt-3" ref={ref}>
               <button
                 type="button"

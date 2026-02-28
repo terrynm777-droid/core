@@ -154,15 +154,6 @@ export default function Home({
       <footer className="mx-auto max-w-6xl px-6 pb-10 pt-6 text-xs text-[#6B7A74] flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
         <div>© {new Date().getFullYear()} CORE</div>
         <div className="flex gap-4">
-          <Link href="/feed" className="hover:underline">
-            Feed
-          </Link>
-          <Link href="/about" className="hover:underline">
-            About
-          </Link>
-          <Link href="/feed" className="hover:underline">
-            Waitlist
-          </Link>
         </div>
       </footer>
     </main>

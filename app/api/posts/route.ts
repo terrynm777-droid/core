@@ -13,6 +13,7 @@ type PostRow = {
   content: string;
   created_at: string;
   author_id: string | null;
+  feed: string | null;
   author: Profile | Profile[] | null; // IMPORTANT: we alias profiles -> author
 };
 
@@ -22,12 +23,18 @@ function pickProfile(p: PostRow["author"]): Profile | null {
   return p as Profile;
 }
 
+function normFeed(x: unknown): "en" | "ja" {
+  return x === "ja" ? "ja" : "en";
+}
+
 function toApiPost(row: PostRow) {
   const profile = pickProfile(row.author);
+
   return {
     id: row.id,
     content: row.content,
     createdAt: row.created_at,
+    commentsCount: (row as any).comments_count ?? 0, // ✅ add here
     authorId: row.author_id,
     profile: profile
       ? {
@@ -46,6 +53,7 @@ const SELECT_WITH_PROFILE = `
   content,
   created_at,
   author_id,
+  comments_count,
   author:profiles!posts_author_id_fkey(
     username,
     avatar_url,
@@ -54,12 +62,16 @@ const SELECT_WITH_PROFILE = `
   )
 `;
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createClient();
+
+  const { searchParams } = new URL(req.url);
+  const feed = normFeed(searchParams.get("feed"));
 
   const { data, error } = await supabase
     .from("posts")
     .select(SELECT_WITH_PROFILE)
+    .eq("feed", feed)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -81,15 +93,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => null)) as { content?: string } | null;
+  const body = (await req.json().catch(() => null)) as { content?: string; feed?: string } | null;
   const content = body?.content?.trim();
+  const feed = normFeed(body?.feed);
 
   if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
   if (content.length > 20000) return NextResponse.json({ error: "max 20,000 chars" }, { status: 400 });
 
   const { data, error } = await supabase
     .from("posts")
-    .insert({ content, author_id: user.id })
+    .insert({ content, author_id: user.id, feed })
     .select(SELECT_WITH_PROFILE)
     .single();
 
