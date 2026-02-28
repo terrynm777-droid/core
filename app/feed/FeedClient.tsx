@@ -5,12 +5,15 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AvatarMenu from "@/app/components/AvatarMenu";
 import PostActions from "@/app/components/PostActions";
+import LinkPreview from "@/app/components/LinkPreview";
+import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
+import { useAttachments } from "@/app/components/useAttachments";
 
 type ApiPost = {
   id: string;
   content: string;
   createdAt: string;
-   commentsCount?: number; // ✅ ADD
+   commentsCount: number; // ✅ ADD
   profile: {
     id: string | null;
     username: string | null;
@@ -57,6 +60,11 @@ export default function FeedClient() {
 
   const [me, setMe] = useState<MeProfile | null>(null);
   const [content, setContent] = useState("");
+  const {
+  attachments,
+  AttachmentButton,
+  AttachmentInput,
+} = useAttachments();
 
   // search
   const [q, setQ] = useState("");
@@ -412,11 +420,17 @@ export default function FeedClient() {
                     <div className="text-xs text-[#6B7A74]">{when}</div>
                   </div>
 
-                  <div className="mt-3 whitespace-pre-wrap text-sm">{p.content}</div>
+                
+
+<div className="mt-3 whitespace-pre-wrap text-sm">
+  {renderWithLinks(p.content)}
+</div>
+
+<LinkPreview url={firstUrl(p.content)} />
 
                   <PostActions
   postId={p.id}
-  commentsCount={p.commentsCount ?? 0}
+  commentsCount={p.commentsCount}
 />
                 </div>
               );

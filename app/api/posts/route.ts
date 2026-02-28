@@ -14,13 +14,14 @@ type PostRow = {
   created_at: string;
   author_id: string | null;
   feed: string | null;
-  author: Profile | Profile[] | null; // IMPORTANT: we alias profiles -> author
+  comments_count: number | null;
+  author: Profile | Profile[] | null;
 };
 
 function pickProfile(p: PostRow["author"]): Profile | null {
   if (!p) return null;
-  if (Array.isArray(p)) return (p[0] as Profile) ?? null;
-  return p as Profile;
+  if (Array.isArray(p)) return p[0] ?? null;
+  return p;
 }
 
 function normFeed(x: unknown): "en" | "ja" {
@@ -34,7 +35,7 @@ function toApiPost(row: PostRow) {
     id: row.id,
     content: row.content,
     createdAt: row.created_at,
-    commentsCount: (row as any).comments_count ?? 0, // ✅ add here
+    commentsCount: row.comments_count ?? 0,
     authorId: row.author_id,
     profile: profile
       ? {
@@ -47,12 +48,12 @@ function toApiPost(row: PostRow) {
   };
 }
 
-// IMPORTANT: explicit FK to disambiguate the duplicate relationship
 const SELECT_WITH_PROFILE = `
   id,
   content,
   created_at,
   author_id,
+  feed,
   comments_count,
   author:profiles!posts_author_id_fkey(
     username,
@@ -75,10 +76,13 @@ export async function GET(req: Request) {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const posts = (data ?? []).map((row: any) => toApiPost(row as PostRow));
-  return NextResponse.json({ posts }, { status: 200 });
+  return NextResponse.json(
+    { posts: (data ?? []).map((r) => toApiPost(r as unknown as PostRow)) },
+    { status: 200 }
+  );
 }
 
 export async function POST(req: Request) {
@@ -86,27 +90,36 @@ export async function POST(req: Request) {
 
   const {
     data: { user },
-    error: userErr,
   } = await supabase.auth.getUser();
 
-  if (userErr || !user) {
+  if (!user)
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
 
-  const body = (await req.json().catch(() => null)) as { content?: string; feed?: string } | null;
+  const body = await req.json();
+
   const content = body?.content?.trim();
   const feed = normFeed(body?.feed);
+  const attachments = body?.attachments ?? null;
 
-  if (!content) return NextResponse.json({ error: "content is required" }, { status: 400 });
-  if (content.length > 20000) return NextResponse.json({ error: "max 20,000 chars" }, { status: 400 });
+  if (!content)
+    return NextResponse.json({ error: "content is required" }, { status: 400 });
 
   const { data, error } = await supabase
     .from("posts")
-    .insert({ content, author_id: user.id, feed })
+    .insert({
+      content,
+      feed,
+      author_id: user.id,
+      attachments,
+    })
     .select(SELECT_WITH_PROFILE)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ post: toApiPost(data as any) }, { status: 201 });
+  return NextResponse.json(
+    { post: toApiPost(data as unknown as PostRow) },
+    { status: 201 }
+  );
 }
