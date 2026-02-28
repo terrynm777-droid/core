@@ -5,18 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: Promise<{ postId: string }> };
-
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders });
-}
-
 type Attachment = { kind: "image" | "video"; url: string; name?: string };
 
 type Profile = {
@@ -36,28 +24,35 @@ type CommentRow = {
   attachments: unknown;
 };
 
-function parseAttachments(raw: unknown): Attachment[] {
-  if (!Array.isArray(raw)) return [];
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
 
-  return (raw as unknown[])
-    .map((x): Attachment | null => {
-      if (typeof x !== "object" || x === null) return null;
-      const a = x as { kind?: unknown; url?: unknown; name?: unknown };
-
-      const url = typeof a.url === "string" ? a.url : String(a.url ?? "");
-      if (!url) return null;
-
-      const kind: Attachment["kind"] = a.kind === "video" ? "video" : "image";
-      const name =
-        typeof a.name === "string" ? a.name : a.name != null ? String(a.name) : undefined;
-
-      return { kind, url, name };
-    })
-    .filter((a): a is Attachment => a !== null);
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-export async function GET(req: NextRequest, context: Ctx) {
-  const { postId } = await context.params;
+function parseAttachments(raw: unknown): Attachment[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as any[])
+    .map((a: any): Attachment => {
+      const kind: Attachment["kind"] = a?.kind === "video" ? "video" : "image";
+      return {
+        kind,
+        url: String(a?.url ?? ""),
+        name: a?.name ? String(a.name) : undefined,
+      };
+    })
+    .filter((a): a is Attachment => Boolean(a.url));
+}
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ postId: string }> }
+) {
+  const { postId } = await params;
   const supabase = await createClient();
 
   const url = new URL(req.url);
@@ -71,7 +66,10 @@ export async function GET(req: NextRequest, context: Ctx) {
     .is("parent_comment_id", null);
 
   if (countErr) {
-    return NextResponse.json({ error: countErr.message }, { status: 500, headers: corsHeaders });
+    return NextResponse.json(
+      { error: countErr.message },
+      { status: 500, headers: corsHeaders }
+    );
   }
 
   const { data: rows, error: rowsErr } = await supabase
@@ -83,7 +81,10 @@ export async function GET(req: NextRequest, context: Ctx) {
     .range(offset, offset + limit - 1);
 
   if (rowsErr) {
-    return NextResponse.json({ error: rowsErr.message }, { status: 500, headers: corsHeaders });
+    return NextResponse.json(
+      { error: rowsErr.message },
+      { status: 500, headers: corsHeaders }
+    );
   }
 
   const commentsRaw = (rows ?? []) as unknown as CommentRow[];
@@ -97,7 +98,10 @@ export async function GET(req: NextRequest, context: Ctx) {
       .in("id", userIds);
 
     if (profErr) {
-      return NextResponse.json({ error: profErr.message }, { status: 500, headers: corsHeaders });
+      return NextResponse.json(
+        { error: profErr.message },
+        { status: 500, headers: corsHeaders }
+      );
     }
 
     (profs ?? []).forEach((p: any) => {
@@ -133,30 +137,42 @@ export async function GET(req: NextRequest, context: Ctx) {
   );
 }
 
-export async function POST(req: NextRequest, context: Ctx) {
-  const { postId } = await context.params;
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ postId: string }> }
+) {
+  const { postId } = await params;
   const supabase = await createClient();
 
   const { data: auth, error: authErr } = await supabase.auth.getUser();
   const user = auth?.user;
 
   if (authErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: corsHeaders });
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401, headers: corsHeaders }
+    );
   }
 
   const payload = (await req.json().catch(() => null)) as
     | { body?: string; parent_comment_id?: string | null; attachments?: unknown }
     | null;
 
-  const text = payload?.body?.trim() ?? "";
+  const text = String(payload?.body ?? "").trim();
   const parent_comment_id = payload?.parent_comment_id ?? null;
   const attachments = parseAttachments(payload?.attachments);
 
   if (!text && attachments.length === 0) {
-    return NextResponse.json({ error: "body is required" }, { status: 400, headers: corsHeaders });
+    return NextResponse.json(
+      { error: "body is required" },
+      { status: 400, headers: corsHeaders }
+    );
   }
   if (text.length > 5000) {
-    return NextResponse.json({ error: "max 5,000 chars" }, { status: 400, headers: corsHeaders });
+    return NextResponse.json(
+      { error: "max 5,000 chars" },
+      { status: 400, headers: corsHeaders }
+    );
   }
 
   const { data: inserted, error: insErr } = await supabase
@@ -172,7 +188,10 @@ export async function POST(req: NextRequest, context: Ctx) {
     .single();
 
   if (insErr) {
-    return NextResponse.json({ error: insErr.message }, { status: 500, headers: corsHeaders });
+    return NextResponse.json(
+      { error: insErr.message },
+      { status: 500, headers: corsHeaders }
+    );
   }
 
   const { data: prof, error: profErr } = await supabase
@@ -182,23 +201,26 @@ export async function POST(req: NextRequest, context: Ctx) {
     .maybeSingle();
 
   if (profErr) {
-    return NextResponse.json({ error: profErr.message }, { status: 500, headers: corsHeaders });
+    return NextResponse.json(
+      { error: profErr.message },
+      { status: 500, headers: corsHeaders }
+    );
   }
 
   const comment = {
-    id: (inserted as any).id as string,
-    post_id: (inserted as any).post_id as string,
-    user_id: (inserted as any).user_id as string,
-    body: (inserted as any).body as string,
-    created_at: (inserted as any).created_at as string,
-    parent_comment_id: (inserted as any).parent_comment_id as string | null,
+    id: (inserted as any).id,
+    post_id: (inserted as any).post_id,
+    user_id: (inserted as any).user_id,
+    body: (inserted as any).body,
+    created_at: (inserted as any).created_at,
+    parent_comment_id: (inserted as any).parent_comment_id,
     attachments: parseAttachments((inserted as any).attachments),
     author: prof
       ? {
-          id: prof.id,
-          username: prof.username ?? null,
-          display_name: prof.display_name ?? null,
-          avatar_url: prof.avatar_url ?? null,
+          id: (prof as any).id,
+          username: (prof as any).username ?? null,
+          display_name: (prof as any).display_name ?? null,
+          avatar_url: (prof as any).avatar_url ?? null,
         }
       : { id: user.id, username: null, display_name: null, avatar_url: null },
   };

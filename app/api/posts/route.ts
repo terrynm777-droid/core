@@ -36,25 +36,18 @@ function normFeed(x: unknown): "en" | "ja" {
   return x === "ja" ? "ja" : "en";
 }
 
-// use this EXACT parseAttachments in BOTH files
-
 function parseAttachments(raw: unknown): Attachment[] {
   if (!Array.isArray(raw)) return [];
-
-  return (raw as unknown[])
-    .map((x): Attachment | null => {
-      if (typeof x !== "object" || x === null) return null;
-      const a = x as { kind?: unknown; url?: unknown; name?: unknown };
-
-      const url = typeof a.url === "string" ? a.url : String(a.url ?? "");
-      if (!url) return null;
-
-      const kind: Attachment["kind"] = a.kind === "video" ? "video" : "image";
-      const name = typeof a.name === "string" ? a.name : a.name != null ? String(a.name) : undefined;
-
-      return { kind, url, name };
+  return (raw as any[])
+    .map((a: any): Attachment => {
+      const kind: Attachment["kind"] = a?.kind === "video" ? "video" : "image";
+      return {
+        kind,
+        url: String(a?.url ?? ""),
+        name: a?.name ? String(a.name) : undefined,
+      };
     })
-    .filter((a): a is Attachment => a !== null);
+    .filter((a): a is Attachment => Boolean(a.url));
 }
 
 function toApiPost(row: PostRow) {

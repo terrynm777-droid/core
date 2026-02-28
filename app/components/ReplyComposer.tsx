@@ -34,9 +34,8 @@ export default function ReplyComposer({
     if (!trimmed && attachments.length === 0) return;
 
     const snapshotText = trimmed;
-    const snapshotAtt = attachments;
+    const snapshotAtt = [...attachments]; // ✅ copy
 
-    // optimistic clear + disable
     setSending(true);
     setText("");
     setAttachments([]);
@@ -44,7 +43,6 @@ export default function ReplyComposer({
     try {
       await onSubmit(snapshotText, snapshotAtt);
     } catch {
-      // restore if needed
       setText(snapshotText);
       setAttachments(snapshotAtt);
     } finally {
@@ -53,11 +51,7 @@ export default function ReplyComposer({
   }
 
   return (
-    <div
-      className="rounded-2xl border border-[#D7E4DD] bg-white p-3"
-      onDrop={onDrop}
-      onDragOver={onDragOver}
-    >
+    <div className="rounded-2xl border border-[#D7E4DD] bg-white p-3" onDrop={onDrop} onDragOver={onDragOver}>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -77,21 +71,17 @@ export default function ReplyComposer({
             <div key={a.url} className="relative">
               {a.kind === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={a.url}
-                  alt={a.name || ""}
-                  className="h-12 w-16 rounded-xl border border-[#D7E4DD] object-cover"
-                />
+                <img src={a.url} alt={a.name || ""} className="h-12 w-16 rounded-xl border border-[#D7E4DD] object-cover" />
               ) : (
-                <div className="h-12 w-16 rounded-xl border border-[#D7E4DD] bg-white flex items-center justify-center text-[10px] text-[#6B7A74]">
+                <div className="flex h-12 w-16 items-center justify-center rounded-xl border border-[#D7E4DD] bg-white text-[10px] text-[#6B7A74]">
                   Video
                 </div>
               )}
               <button
                 type="button"
                 onClick={() => removeAttachment(a.url)}
-                className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
                 disabled={sending || uploading}
+                className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs disabled:opacity-50"
               >
                 ×
               </button>
