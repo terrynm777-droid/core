@@ -1,4 +1,3 @@
-// app/feed/FeedLayoutClient.tsx
 "use client";
 
 import { useEffect, useState } from "react";
