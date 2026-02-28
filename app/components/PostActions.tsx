@@ -1,4 +1,3 @@
-// app/components/PostActions.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -47,6 +46,7 @@ export default function PostActions({
   const [busy, setBusy] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
+  // local counter for instant UI updates
   const [localCommentsCount, setLocalCommentsCount] = useState<number>(Number(commentsCount ?? 0));
 
   useEffect(() => {
@@ -61,8 +61,24 @@ export default function PostActions({
     setLikeCount(Number(json?.likeCount ?? 0));
   }
 
+  async function loadCommentsCount() {
+    try {
+      const res = await fetch(
+        `/api/posts/${encodeURIComponent(postId)}/comments?limit=1&offset=0`,
+        { cache: "no-store", credentials: "include" }
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok) return;
+
+      // your comments API already returns { total }
+      const total = Number(json?.total ?? 0);
+      if (Number.isFinite(total)) setLocalCommentsCount(total);
+    } catch {}
+  }
+
   useEffect(() => {
     loadLike();
+    loadCommentsCount(); // ✅ real count from post_comments, not posts.comments_count
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
@@ -113,7 +129,10 @@ export default function PostActions({
       </div>
 
       {showComments ? (
-        <CommentsThread postId={postId} onCommentCreated={() => setLocalCommentsCount((n) => n + 1)} />
+        <CommentsThread
+          postId={postId}
+          onCommentCreated={() => setLocalCommentsCount((n) => n + 1)}
+        />
       ) : null}
     </div>
   );

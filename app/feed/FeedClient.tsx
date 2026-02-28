@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AvatarMenu from "@/app/components/AvatarMenu";
@@ -9,6 +9,7 @@ import { useAttachments } from "@/app/components/useAttachments";
 import LinkPreview from "@/app/components/LinkPreview";
 import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
 
+type Attachment = { kind: "image" | "video"; url: string; name?: string };
 
 type ApiPost = {
   id: string;
@@ -21,6 +22,9 @@ type ApiPost = {
     avatarUrl: string | null;
     traderStyle: string | null;
   } | null;
+
+  // keep optional so you don't break if API doesn't return it yet
+  attachments?: Attachment[] | null;
 };
 
 type MeProfile = {
@@ -59,7 +63,16 @@ export default function FeedClient() {
   const [me, setMe] = useState<MeProfile | null>(null);
   const [content, setContent] = useState("");
 
-  const { attachments, setAttachments, AttachmentButton, AttachmentInput } = useAttachments();
+  const {
+    attachments,
+    uploading,
+    setAttachments,
+    removeAttachment,
+    AttachmentButton,
+    AttachmentInput,
+    onDrop,
+    onDragOver,
+  } = useAttachments();
 
   // search
   const [q, setQ] = useState("");
@@ -88,7 +101,7 @@ export default function FeedClient() {
       const res = await fetch(`/api/posts?feed=${feed}`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to load feed");
-      setPosts(Array.isArray(json?.posts) ? json.posts : []);
+      setPosts(Array.isArray(json?.posts) ? (json.posts as ApiPost[]) : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load feed");
     } finally {
@@ -124,7 +137,7 @@ export default function FeedClient() {
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to post");
 
-      const newPost = json?.post;
+      const newPost = json?.post as ApiPost | undefined;
       if (newPost?.id) {
         setPosts((prev) => [newPost, ...prev]);
       } else {
@@ -132,7 +145,7 @@ export default function FeedClient() {
       }
 
       setContent("");
-setAttachments([]);
+      setAttachments([]);
     } catch (e: any) {
       setErr(e?.message || "Failed to post");
     } finally {
@@ -255,10 +268,10 @@ setAttachments([]);
                   {q.trim().startsWith("@")
                     ? "Profile"
                     : searching
-                      ? "Searching…"
-                      : symHits.length
-                        ? "Stocks"
-                        : "Press Enter to search news"}
+                    ? "Searching…"
+                    : symHits.length
+                    ? "Stocks"
+                    : "Press Enter to search news"}
                 </div>
 
                 {q.trim().startsWith("@") ? (
@@ -331,8 +344,12 @@ setAttachments([]);
           </div>
         </div>
 
-        {/* COMPOSER */}
-        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
+        {/* COMPOSER (drag/drop enabled) */}
+        <div
+          className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -343,7 +360,37 @@ setAttachments([]);
           <div className="mt-2 flex items-center gap-2">
             <AttachmentButton />
             <AttachmentInput />
+            {uploading ? <div className="text-xs text-[#6B7A74]">Uploading…</div> : null}
           </div>
+
+          {/* preview inside composer */}
+          {attachments.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {attachments.map((a) => (
+                <div key={a.url} className="relative">
+                  {a.kind === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={a.url}
+                      alt={a.name || ""}
+                      className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                    />
+                  ) : (
+                    <div className="h-16 w-24 rounded-xl border border-[#D7E4DD] bg-white flex items-center justify-center text-[10px] text-[#6B7A74]">
+                      Video
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(a.url)}
+                    className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#6B7A74]">
             <span>{content.length}/20000</span>
@@ -362,7 +409,7 @@ setAttachments([]);
               <button
                 type="button"
                 onClick={createPost}
-                disabled={posting || !content.trim()}
+                disabled={posting || !content.trim() || uploading}
                 className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {posting ? "Posting…" : "Post"}
@@ -413,6 +460,30 @@ setAttachments([]);
                   <div className="mt-3 whitespace-pre-wrap text-sm">{renderWithLinks(p.content)}</div>
 
                   {url ? <LinkPreview url={url} /> : null}
+
+                  {/* post attachments (only if API starts returning them) */}
+                  {Array.isArray(p.attachments) && p.attachments.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {p.attachments.map((a) => (
+                        <div key={a.url} className="relative">
+                          {a.kind === "image" ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={a.url}
+                              alt={a.name || ""}
+                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+                            />
+                          ) : (
+                            <video
+                              src={a.url}
+                              controls
+                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
 
                   <PostActions postId={p.id} commentsCount={p.commentsCount} />
                 </div>
