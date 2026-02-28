@@ -1,4 +1,3 @@
-// app/api/posts/[postId]/comments/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -48,10 +47,10 @@ function parseAttachments(raw: unknown): Attachment[] {
     .filter((a): a is Attachment => Boolean(a.url));
 }
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ postId: string }> }
-) {
+// IMPORTANT: your Next build expects params as a Promise here
+type Ctx = { params: Promise<{ postId: string }> };
+
+export async function GET(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
   const supabase = await createClient();
 
@@ -66,10 +65,7 @@ export async function GET(
     .is("parent_comment_id", null);
 
   if (countErr) {
-    return NextResponse.json(
-      { error: countErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: countErr.message }, { status: 500, headers: corsHeaders });
   }
 
   const { data: rows, error: rowsErr } = await supabase
@@ -81,13 +77,11 @@ export async function GET(
     .range(offset, offset + limit - 1);
 
   if (rowsErr) {
-    return NextResponse.json(
-      { error: rowsErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: rowsErr.message }, { status: 500, headers: corsHeaders });
   }
 
   const commentsRaw = (rows ?? []) as unknown as CommentRow[];
+
   const userIds = Array.from(new Set(commentsRaw.map((c) => c.user_id))).filter(Boolean);
 
   const profilesById = new Map<string, Profile>();
@@ -98,10 +92,7 @@ export async function GET(
       .in("id", userIds);
 
     if (profErr) {
-      return NextResponse.json(
-        { error: profErr.message },
-        { status: 500, headers: corsHeaders }
-      );
+      return NextResponse.json({ error: profErr.message }, { status: 500, headers: corsHeaders });
     }
 
     (profs ?? []).forEach((p: any) => {
@@ -131,16 +122,10 @@ export async function GET(
       },
   }));
 
-  return NextResponse.json(
-    { comments, total: count ?? 0, limit, offset },
-    { status: 200, headers: corsHeaders }
-  );
+  return NextResponse.json({ comments, total: count ?? 0, limit, offset }, { status: 200, headers: corsHeaders });
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ postId: string }> }
-) {
+export async function POST(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
   const supabase = await createClient();
 
@@ -148,10 +133,7 @@ export async function POST(
   const user = auth?.user;
 
   if (authErr || !user) {
-    return NextResponse.json(
-      { error: "Not authenticated" },
-      { status: 401, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: corsHeaders });
   }
 
   const payload = (await req.json().catch(() => null)) as
@@ -163,16 +145,10 @@ export async function POST(
   const attachments = parseAttachments(payload?.attachments);
 
   if (!text && attachments.length === 0) {
-    return NextResponse.json(
-      { error: "body is required" },
-      { status: 400, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: "body is required" }, { status: 400, headers: corsHeaders });
   }
   if (text.length > 5000) {
-    return NextResponse.json(
-      { error: "max 5,000 chars" },
-      { status: 400, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: "max 5,000 chars" }, { status: 400, headers: corsHeaders });
   }
 
   const { data: inserted, error: insErr } = await supabase
@@ -188,11 +164,22 @@ export async function POST(
     .single();
 
   if (insErr) {
-    return NextResponse.json(
-      { error: insErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: insErr.message }, { status: 500, headers: corsHeaders });
   }
+
+  // keep posts.comments_count in sync (your feed uses this)
+ const { data: postRow } = await supabase
+  .from("posts")
+  .select("comments_count")
+  .eq("id", postId)
+  .maybeSingle();
+
+const nextCount = Number((postRow as any)?.comments_count ?? 0) + 1;
+
+  await supabase
+  .from("posts")
+  .update({ comments_count: nextCount } as any)
+  .eq("id", postId);
 
   const { data: prof, error: profErr } = await supabase
     .from("profiles")
@@ -201,10 +188,7 @@ export async function POST(
     .maybeSingle();
 
   if (profErr) {
-    return NextResponse.json(
-      { error: profErr.message },
-      { status: 500, headers: corsHeaders }
-    );
+    return NextResponse.json({ error: profErr.message }, { status: 500, headers: corsHeaders });
   }
 
   const comment = {
