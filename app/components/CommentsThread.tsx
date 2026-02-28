@@ -1,10 +1,10 @@
+// app/components/CommentsThread.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ReplyComposer from "@/app/components/ReplyComposer";
 
-// ✅ add
 import LinkPreview from "@/app/components/LinkPreview";
 import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
 
@@ -27,7 +27,6 @@ type Comment = {
   author?: Author;
 };
 
-// ✅ add (attachments payload type)
 type Attachment = { kind: "image" | "video"; url: string };
 
 function Avatar({ url, label }: { url?: string | null; label: string }) {
@@ -43,6 +42,7 @@ function Avatar({ url, label }: { url?: string | null; label: string }) {
   }
 
   return (
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={url}
       alt={label}
@@ -79,9 +79,11 @@ function AuthorLine({ author }: { author?: Author }) {
 export default function CommentsThread({
   postId,
   open = true,
+  onCommentCreated,
 }: {
   postId: string;
   open?: boolean;
+  onCommentCreated?: () => void;
 }) {
   const [showComposer] = useState(open);
   const [showComments, setShowComments] = useState(false);
@@ -122,7 +124,6 @@ export default function CommentsThread({
     }
   }
 
-  // ✅ changed signature: attachments optional, backward-compatible
   async function submitTopLevel(text: string, attachments?: Attachment[]) {
     setErrorMsg(null);
 
@@ -130,7 +131,6 @@ export default function CommentsThread({
       const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ✅ add attachments (backend can ignore if not implemented yet)
         body: JSON.stringify({ body: text, attachments: attachments ?? [] }),
         credentials: "include",
       });
@@ -147,8 +147,10 @@ export default function CommentsThread({
       if (created?.id) {
         setComments((prev) => [...prev, created]);
         setTotal((t) => t + 1);
+        onCommentCreated?.();
       } else {
         await loadComments();
+        onCommentCreated?.();
       }
 
       setShowComments(true);
@@ -167,7 +169,6 @@ export default function CommentsThread({
 
   return (
     <div className="mt-2 rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-3">
-      {/* ✅ ReplyComposer now supports attachments and calls onSubmit(text, attachments) */}
       <ReplyComposer placeholder="Write a comment…" onSubmit={submitTopLevel} />
 
       <div className="mt-2 flex items-center justify-between">
@@ -202,10 +203,7 @@ export default function CommentsThread({
                   <span>{new Date(c.created_at).toLocaleString()}</span>
                 </div>
 
-                {/* ✅ linkify + preview (no UI removal) */}
-                <div className="mt-2 whitespace-pre-wrap text-sm">
-                  {renderWithLinks(c.body)}
-                </div>
+                <div className="mt-2 whitespace-pre-wrap text-sm">{renderWithLinks(c.body)}</div>
                 <LinkPreview url={firstUrl(c.body)} />
               </div>
             ))

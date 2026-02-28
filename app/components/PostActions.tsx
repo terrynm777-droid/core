@@ -1,3 +1,4 @@
+// app/components/PostActions.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -46,11 +47,14 @@ export default function PostActions({
   const [busy, setBusy] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
+  const [localCommentsCount, setLocalCommentsCount] = useState<number>(Number(commentsCount ?? 0));
+
+  useEffect(() => {
+    setLocalCommentsCount(Number(commentsCount ?? 0));
+  }, [commentsCount, postId]);
+
   async function loadLike() {
-    const res = await fetch(
-      `/api/posts/${encodeURIComponent(postId)}/like`,
-      { cache: "no-store" }
-    );
+    const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/like`, { cache: "no-store" });
     const json = await res.json().catch(() => null);
     if (!res.ok) return;
     setLiked(!!json?.liked);
@@ -59,6 +63,7 @@ export default function PostActions({
 
   useEffect(() => {
     loadLike();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
   async function toggleLike() {
@@ -70,10 +75,7 @@ export default function PostActions({
     setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
 
     try {
-      const res = await fetch(
-        `/api/posts/${encodeURIComponent(postId)}/like`,
-        { method: "POST" }
-      );
+      const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/like`, { method: "POST" });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to like");
       await loadLike();
@@ -106,13 +108,13 @@ export default function PostActions({
         >
           <IconComment />
           <span>Comment</span>
-          {commentsCount ? (
-            <span className="text-xs text-[#6B7A74]">{commentsCount}</span>
-          ) : null}
+          <span className="text-xs text-[#6B7A74]">{localCommentsCount}</span>
         </button>
       </div>
 
-      {showComments ? <CommentsThread postId={postId} /> : null}
+      {showComments ? (
+        <CommentsThread postId={postId} onCommentCreated={() => setLocalCommentsCount((n) => n + 1)} />
+      ) : null}
     </div>
   );
 }

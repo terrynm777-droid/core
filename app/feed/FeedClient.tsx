@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AvatarMenu from "@/app/components/AvatarMenu";
 import PostActions from "@/app/components/PostActions";
+import { useAttachments } from "@/app/components/useAttachments";
 import LinkPreview from "@/app/components/LinkPreview";
 import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
-import { useAttachments } from "@/app/components/useAttachments";
+
 
 type ApiPost = {
   id: string;
   content: string;
   createdAt: string;
-   commentsCount: number; // ✅ ADD
+  commentsCount: number;
   profile: {
     id: string | null;
     username: string | null;
@@ -35,15 +36,12 @@ function clean(s: string) {
 }
 
 function isProbablyTicker(s: string) {
-  // AAPL, TSLA, 7203.T, BRK.B, RIO.AX etc
   const t = s.trim().toUpperCase();
   if (!t) return false;
-  if (t.length > 20) return false; // allow longer suffixes like BRK.B / 7203.T / RIO.AX
+  if (t.length > 20) return false;
   return /^[A-Z0-9.\-]{1,20}$/.test(t) && /[A-Z0-9]/.test(t);
 }
 
-// ✅ ONE canonical stock route.
-// Make sure you have: app/s/[symbol]/page.tsx (and StockPageClient next to it if you use it)
 function stockHref(symbol: string) {
   return `/s/${encodeURIComponent(symbol.toUpperCase())}`;
 }
@@ -60,11 +58,8 @@ export default function FeedClient() {
 
   const [me, setMe] = useState<MeProfile | null>(null);
   const [content, setContent] = useState("");
-  const {
-  attachments,
-  AttachmentButton,
-  AttachmentInput,
-} = useAttachments();
+
+  const { attachments, setAttachments, AttachmentButton, AttachmentInput } = useAttachments();
 
   // search
   const [q, setQ] = useState("");
@@ -121,7 +116,8 @@ export default function FeedClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: text,
-          feed, // "en" | "ja"
+          feed,
+          attachments,
         }),
       });
 
@@ -136,6 +132,7 @@ export default function FeedClient() {
       }
 
       setContent("");
+setAttachments([]);
     } catch (e: any) {
       setErr(e?.message || "Failed to post");
     } finally {
@@ -152,7 +149,6 @@ export default function FeedClient() {
       return;
     }
 
-    // only fetch symbols if it doesn't look like @username
     if (text.startsWith("@")) {
       setSymHits([]);
       setSearching(false);
@@ -198,20 +194,17 @@ export default function FeedClient() {
     const text = clean(input);
     if (!text) return;
 
-    // @username
     if (text.startsWith("@")) {
       const uname = clean(text.slice(1));
       if (uname) router.push(`/u/${encodeURIComponent(uname)}`);
       return;
     }
 
-    // ticker-like → stock page
     if (isProbablyTicker(text)) {
       router.push(stockHref(text));
       return;
     }
 
-    // fallback → headlines search
     router.push(`/headlines?q=${encodeURIComponent(text)}`);
   }
 
@@ -222,7 +215,7 @@ export default function FeedClient() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-3xl font-semibold">Feed</h1>
 
-          {/* SEARCH (middle) */}
+          {/* SEARCH */}
           <div className="relative flex-1 max-w-md">
             <div className="flex items-center rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2">
               <input
@@ -232,10 +225,7 @@ export default function FeedClient() {
                   setOpen(true);
                 }}
                 onFocus={() => setOpen(true)}
-                onBlur={() => {
-                  // small delay so click works
-                  setTimeout(() => setOpen(false), 120);
-                }}
+                onBlur={() => setTimeout(() => setOpen(false), 120)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -259,7 +249,6 @@ export default function FeedClient() {
               </button>
             </div>
 
-            {/* DROPDOWN */}
             {open && (q.trim() || symHits.length > 0) ? (
               <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-[#D7E4DD] bg-white shadow-sm">
                 <div className="px-4 py-2 text-xs text-[#6B7A74]">
@@ -272,7 +261,6 @@ export default function FeedClient() {
                         : "Press Enter to search news"}
                 </div>
 
-                {/* quick profile jump */}
                 {q.trim().startsWith("@") ? (
                   <button
                     type="button"
@@ -331,7 +319,6 @@ export default function FeedClient() {
             ) : null}
           </div>
 
-          {/* RIGHT SIDE */}
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -353,7 +340,11 @@ export default function FeedClient() {
             className="min-h-[96px] w-full resize-none rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm outline-none"
           />
 
-          {/* bottom row: count + posting-as + post button on bottom-right */}
+          <div className="mt-2 flex items-center gap-2">
+            <AttachmentButton />
+            <AttachmentInput />
+          </div>
+
           <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#6B7A74]">
             <span>{content.length}/20000</span>
 
@@ -381,9 +372,7 @@ export default function FeedClient() {
         </div>
 
         {err ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {err}
-          </div>
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
         ) : null}
 
         {loading ? (
@@ -395,6 +384,7 @@ export default function FeedClient() {
               const style = p.profile?.traderStyle ?? "—";
               const when = new Date(p.createdAt).toLocaleString();
               const profileHref = username !== "unknown" ? `/u/${encodeURIComponent(username)}` : null;
+              const url = firstUrl(p.content);
 
               return (
                 <div key={p.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
@@ -420,18 +410,11 @@ export default function FeedClient() {
                     <div className="text-xs text-[#6B7A74]">{when}</div>
                   </div>
 
-                
+                  <div className="mt-3 whitespace-pre-wrap text-sm">{renderWithLinks(p.content)}</div>
 
-<div className="mt-3 whitespace-pre-wrap text-sm">
-  {renderWithLinks(p.content)}
-</div>
+                  {url ? <LinkPreview url={url} /> : null}
 
-<LinkPreview url={firstUrl(p.content)} />
-
-                  <PostActions
-  postId={p.id}
-  commentsCount={p.commentsCount}
-/>
+                  <PostActions postId={p.id} commentsCount={p.commentsCount} />
                 </div>
               );
             })}

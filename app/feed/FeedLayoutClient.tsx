@@ -1,28 +1,23 @@
+// app/feed/FeedLayoutClient.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export default function FeedLayoutClient({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
   const pathname = usePathname();
-
   const router = useRouter();
   const sp = useSearchParams();
-  const active = (sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja";
 
-  useEffect(() => setOpen(false), [pathname]);
+  const [active, setActive] = useState<"en" | "ja">(
+    (sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja"
+  );
 
   useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+    setActive((sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   function setFeed(next: "en" | "ja") {
     const params = new URLSearchParams(sp.toString());
@@ -34,7 +29,6 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
     <div className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
       <div className="mx-auto max-w-6xl px-6 py-6">
         <div className="grid grid-cols-[220px_1fr] gap-6">
-          {/* LEFT SIDEBAR */}
           <aside className="sticky top-6 h-[calc(100vh-48px)] rounded-2xl border border-[#D7E4DD] bg-white p-3">
             <div className="px-2 py-2 text-xs font-semibold text-[#6B7A74]">Regions</div>
 
@@ -68,30 +62,8 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
                 News
               </Link>
             </div>
-
-            <div className="mt-3" ref={ref}>
-              <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                className="w-full rounded-xl bg-[#22C55E] px-3 py-2 text-sm font-semibold text-white hover:opacity-95"
-              >
-                Menu <span className="ml-1">{open ? "▴" : "▾"}</span>
-              </button>
-
-              {open ? (
-                <div className="mt-2 overflow-hidden rounded-2xl border border-[#D7E4DD] bg-white shadow-sm">
-                  <Link
-                    href={`/news?feed=${active}`}
-                    className="block px-4 py-3 text-sm font-medium hover:bg-[#F7FAF8]"
-                  >
-                    News
-                  </Link>
-                </div>
-              ) : null}
-            </div>
           </aside>
 
-          {/* MAIN */}
           <div>{children}</div>
         </div>
       </div>
