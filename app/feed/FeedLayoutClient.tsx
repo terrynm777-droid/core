@@ -24,6 +24,9 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
     router.replace(`${pathname}?${params.toString()}`);
   }
 
+  const ACTIVE = "bg-[#22C55E] text-white";
+  const INACTIVE = "hover:bg-[#F7FAF8]";
+
   return (
     <div className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
       <div className="mx-auto max-w-6xl px-6 py-6">
@@ -35,9 +38,11 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
               type="button"
               onClick={() => setFeed("en")}
               className={[
-                "w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
-                active === "en" ? "bg-[#0B0F0E] text-white" : "hover:bg-[#F7FAF8]",
-              ].join(" ")}
+  "w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
+  active === "en"
+    ? "bg-[#22C55E] text-white"
+    : "text-[#0B0F0E] hover:bg-[#F7FAF8]",
+].join(" ")}
             >
               English
             </button>
@@ -46,9 +51,11 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
               type="button"
               onClick={() => setFeed("ja")}
               className={[
-                "mt-1 w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
-                active === "ja" ? "bg-[#0B0F0E] text-white" : "hover:bg-[#F7FAF8]",
-              ].join(" ")}
+  "mt-1 w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
+  active === "ja"
+    ? "bg-[#22C55E] text-white"
+    : "text-[#0B0F0E] hover:bg-[#F7FAF8]",
+].join(" ")}
             >
               日本語
             </button>

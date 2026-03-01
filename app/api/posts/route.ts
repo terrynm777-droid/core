@@ -125,6 +125,7 @@ export async function POST(req: Request) {
   const feed = normFeed(body?.feed);
   const attachments = parseAttachments(body?.attachments);
 
+  // allow attachments-only posts
   if (!content && attachments.length === 0) {
     return NextResponse.json({ error: "content is required" }, { status: 400 });
   }
