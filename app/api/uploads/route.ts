@@ -5,13 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type UploadResp =
-  | { url: string; path: string }
-  | { error: string };
-
-function kindFromMime(mime: string): "image" | "video" {
-  return mime.startsWith("video/") ? "video" : "image";
-}
+type UploadResp = { url: string; path: string } | { error: string };
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -32,21 +26,25 @@ export async function POST(req: Request) {
     return NextResponse.json<UploadResp>({ error: "file is required" }, { status: 400 });
   }
 
-  const maxBytes = 25 * 1024 * 1024; // 25MB
+  // IMPORTANT: Vercel can 413 large multipart before your code runs.
+  // Keep this conservative unless you move to direct-to-storage uploads.
+  const maxBytes = 4 * 1024 * 1024; // 4MB
   if (file.size > maxBytes) {
-    return NextResponse.json<UploadResp>({ error: "max 25MB" }, { status: 400 });
+    return NextResponse.json<UploadResp>({ error: "max 4MB" }, { status: 400 });
   }
 
   const bucket = "attachments";
+
   const safeName = (file.name || "upload").replace(/[^\w.\-]+/g, "_");
   const ext = safeName.includes(".") ? safeName.split(".").pop() : "";
   const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
   const path = `${user.id}/${uuid}${ext ? `.${ext}` : ""}`;
 
-  const bytes = await file.arrayBuffer();
+  const ab = await file.arrayBuffer();
+  const body = Buffer.from(ab);
 
-  const { error: upErr } = await supabase.storage.from(bucket).upload(path, bytes, {
-    contentType: file.type || (kindFromMime(file.type) === "video" ? "video/mp4" : "image/jpeg"),
+  const { error: upErr } = await supabase.storage.from(bucket).upload(path, body, {
+    contentType: file.type || "application/octet-stream",
     upsert: false,
   });
 
@@ -55,7 +53,5 @@ export async function POST(req: Request) {
   }
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  const url = data.publicUrl;
-
-  return NextResponse.json<UploadResp>({ url, path }, { status: 200 });
+  return NextResponse.json<UploadResp>({ url: data.publicUrl, path }, { status: 200 });
 }

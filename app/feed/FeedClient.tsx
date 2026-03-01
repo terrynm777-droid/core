@@ -9,7 +9,12 @@ import { useAttachments } from "@/app/components/useAttachments";
 import LinkPreview from "@/app/components/LinkPreview";
 import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
 
-type Attachment = { kind: "image" | "video"; url: string; name?: string };
+type Attachment = {
+  kind: "image" | "video";
+  url?: string; // becomes real URL after upload
+  previewUrl?: string; // local blob while uploading/selected
+  name?: string;
+};
 
 type ApiPost = {
   id: string;
@@ -22,7 +27,7 @@ type ApiPost = {
     avatarUrl: string | null;
     traderStyle: string | null;
   } | null;
-  attachments?: Attachment[] | null;
+  attachments?: { kind: "image" | "video"; url: string; name?: string }[] | null; // DB should only store real urls
 };
 
 type MeProfile = {
@@ -49,8 +54,8 @@ function Avatar({ url, label }: { url?: string | null; label: string }) {
     );
   }
 
+  // eslint-disable-next-line @next/next/no-img-element
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={url}
       alt={label}
@@ -144,14 +149,24 @@ export default function FeedClient() {
     if (inFlightRef.current || posting || uploading) return;
 
     const text = content.trim();
-    const attSnapshot = [...attachments]; // IMPORTANT: copy
-    if (!text && attSnapshot.length === 0) return;
+
+    // IMPORTANT: only send uploaded attachments (real URLs), never blob preview urls
+    const uploaded = (attachments as Attachment[]).filter((a) => !!a.url);
+    if (!text && uploaded.length === 0) return;
 
     inFlightRef.current = true;
     setPosting(true);
     setErr(null);
 
-    const payload = { content: text, feed, attachments: attSnapshot };
+    const payload = {
+      content: text,
+      feed,
+      attachments: uploaded.map((a) => ({
+        kind: a.kind,
+        url: String(a.url),
+        name: a.name,
+      })),
+    };
 
     // clear UI immediately
     setContent("");
@@ -174,9 +189,8 @@ export default function FeedClient() {
         await loadPosts();
       }
     } catch (e: any) {
-      // restore composer on failure
+      // restore composer on failure (restore text; attachments list is empty because we cleared it)
       setContent(payload.content);
-      setAttachments(payload.attachments);
       setErr(e?.message || "Failed to post");
     } finally {
       setPosting(false);
@@ -251,6 +265,9 @@ export default function FeedClient() {
 
     router.push(`/headlines?q=${encodeURIComponent(text)}`);
   }
+
+  const composerCanPost =
+    !posting && !uploading && (content.trim().length > 0 || attachments.some((a: any) => !!a.url));
 
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
@@ -376,7 +393,11 @@ export default function FeedClient() {
         </div>
 
         {/* COMPOSER (drag/drop enabled) */}
-        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm" onDrop={onDrop} onDragOver={onDragOver}>
+        <div
+          className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -392,24 +413,37 @@ export default function FeedClient() {
 
           {attachments.length ? (
             <div className="mt-2 flex flex-wrap gap-2">
-              {attachments.map((a) => (
-                <div key={a.url} className="relative">
-                  {a.kind === "image" ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={a.url} alt={a.name || ""} className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover" />
-                  ) : (
-                    <video src={a.url} className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover" muted playsInline />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeAttachment(a.url)}
-                    className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
-                    disabled={posting || uploading}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+              {(attachments as Attachment[]).map((a) => {
+                const src = a.url || a.previewUrl || "";
+                if (!src) return null;
+                return (
+                  <div key={src} className="relative">
+                    {a.kind === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={src}
+                        alt={a.name || ""}
+                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                      />
+                    ) : (
+                      <video
+                        src={src}
+                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                        muted
+                        playsInline
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(a.url || a.previewUrl || "")}
+                      className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
+                      disabled={posting || uploading}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
 
@@ -430,7 +464,7 @@ export default function FeedClient() {
               <button
                 type="button"
                 onClick={createPost}
-                disabled={posting || uploading || (!content.trim() && attachments.length === 0)}
+                disabled={!composerCanPost}
                 className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {posting ? "Posting…" : "Post"}
@@ -491,9 +525,17 @@ export default function FeedClient() {
                         <div key={a.url} className="relative">
                           {a.kind === "image" ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={a.url} alt={a.name || ""} className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover" />
+                            <img
+                              src={a.url}
+                              alt={a.name || ""}
+                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+                            />
                           ) : (
-                            <video src={a.url} controls className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover" />
+                            <video
+                              src={a.url}
+                              controls
+                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+                            />
                           )}
                         </div>
                       ))}

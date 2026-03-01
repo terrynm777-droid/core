@@ -3,7 +3,12 @@
 
 import React, { useCallback, useRef, useState } from "react";
 
-export type Att = { kind: "image" | "video"; url: string; name?: string };
+export type Att = {
+  kind: "image" | "video";
+  url: string;          // final public URL (from Supabase)
+  name?: string;
+  previewUrl?: string;  // local blob preview for instant UI
+};
 
 type UploadRes = { url?: string; error?: string };
 
@@ -11,11 +16,7 @@ async function uploadOne(file: File): Promise<UploadRes> {
   const fd = new FormData();
   fd.append("file", file);
 
-  const res = await fetch("/api/uploads", {
-    method: "POST",
-    body: fd,
-  });
-
+  const res = await fetch("/api/uploads", { method: "POST", body: fd });
   const json = (await res.json().catch(() => null)) as any;
   if (!res.ok) return { error: json?.error || `HTTP ${res.status}` };
   return { url: json?.url };
@@ -30,47 +31,68 @@ export function useAttachments() {
   const [attachments, setAttachments] = useState<Att[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  const removeAttachment = useCallback((url: string) => {
-    setAttachments((prev) => prev.filter((a) => a.url !== url));
+  const removeAttachment = useCallback((urlOrPreview: string) => {
+    setAttachments((prev) =>
+      prev.filter((a) => a.url !== urlOrPreview && a.previewUrl !== urlOrPreview)
+    );
   }, []);
 
-  const onPickFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  const addFiles = useCallback(async (files: File[]) => {
     if (!files.length) return;
 
     setUploading(true);
     try {
-      const next: Att[] = [];
-      for (const f of files) {
+      // add previews immediately
+      const staged = files.map((f) => ({
+        kind: kindFromFile(f),
+        url: "",
+        name: f.name,
+        previewUrl: URL.createObjectURL(f),
+      }));
+
+      setAttachments((prev) => [...prev, ...staged]);
+
+      // upload sequentially (simple + predictable)
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
         const out = await uploadOne(f);
-        if (!out.url) continue;
-        next.push({ kind: kindFromFile(f), url: out.url, name: f.name });
+
+        if (!out.url) {
+          // remove failed one
+          const preview = staged[i].previewUrl!;
+          setAttachments((prev) => prev.filter((a) => a.previewUrl !== preview));
+          continue;
+        }
+
+        const preview = staged[i].previewUrl!;
+        setAttachments((prev) =>
+          prev.map((a) =>
+            a.previewUrl === preview ? { ...a, url: out.url! } : a
+          )
+        );
       }
-      if (next.length) setAttachments((prev) => [...prev, ...next]);
     } finally {
       setUploading(false);
     }
   }, []);
 
-  const onDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer?.files ?? []);
-    if (!files.length) return;
+  const onPickFiles = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      e.target.value = "";
+      await addFiles(files);
+    },
+    [addFiles]
+  );
 
-    setUploading(true);
-    try {
-      const next: Att[] = [];
-      for (const f of files) {
-        const out = await uploadOne(f);
-        if (!out.url) continue;
-        next.push({ kind: kindFromFile(f), url: out.url, name: f.name });
-      }
-      if (next.length) setAttachments((prev) => [...prev, ...next]);
-    } finally {
-      setUploading(false);
-    }
-  }, []);
+  const onDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      await addFiles(files);
+    },
+    [addFiles]
+  );
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
