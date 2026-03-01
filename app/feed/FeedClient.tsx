@@ -81,7 +81,6 @@ export default function FeedClient() {
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [locked, setLocked] = useState(false);
 
   const [me, setMe] = useState<MeProfile | null>(null);
   const [content, setContent] = useState("");
@@ -141,51 +140,49 @@ export default function FeedClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed]);
 
- async function createPost() {
-  if (inFlightRef.current || posting || uploading) return;
+  async function createPost() {
+    if (inFlightRef.current || posting || uploading) return;
 
-  const text = content.trim();
-  const attSnapshot = [...attachments]; // IMPORTANT: copy
+    const text = content.trim();
+    const attSnapshot = [...attachments]; // IMPORTANT: copy
+    if (!text && attSnapshot.length === 0) return;
 
-  if (!text && attSnapshot.length === 0) return;
+    inFlightRef.current = true;
+    setPosting(true);
+    setErr(null);
 
-  // lock immediately
-  inFlightRef.current = true;
-  setPosting(true);
-  setErr(null);
+    const payload = { content: text, feed, attachments: attSnapshot };
 
-  const payload = { content: text, feed, attachments: attSnapshot };
+    // clear UI immediately
+    setContent("");
+    setAttachments([]);
 
-  // clear UI immediately
-  setContent("");
-  setAttachments([]);
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-  try {
-    const res = await fetch("/api/posts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Failed to post");
 
-    const json = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(json?.error || "Failed to post");
-
-    const newPost = json?.post;
-    if (newPost?.id) {
-      setPosts((prev) => [newPost, ...prev]);
-    } else {
-      await loadPosts();
+      const newPost = json?.post as ApiPost | undefined;
+      if (newPost?.id) {
+        setPosts((prev) => [newPost, ...prev]);
+      } else {
+        await loadPosts();
+      }
+    } catch (e: any) {
+      // restore composer on failure
+      setContent(payload.content);
+      setAttachments(payload.attachments);
+      setErr(e?.message || "Failed to post");
+    } finally {
+      setPosting(false);
+      inFlightRef.current = false;
     }
-  } catch (e: any) {
-    // restore composer on failure
-    setContent(payload.content);
-    setAttachments(payload.attachments);
-    setErr(e?.message || "Failed to post");
-  } finally {
-    setPosting(false);
-    inFlightRef.current = false;
   }
-}
 
   // live stock search via /api/symbols
   useEffect(() => {
@@ -333,9 +330,7 @@ export default function FeedClient() {
                         }}
                         className="w-full px-4 py-3 text-left hover:bg-[#F7FAF8]"
                       >
-                        <div className="text-sm font-semibold">
-                          {String(h.symbol || "").toUpperCase()}
-                        </div>
+                        <div className="text-sm font-semibold">{String(h.symbol || "").toUpperCase()}</div>
                         {h.name ? <div className="text-xs text-[#6B7A74]">{h.name}</div> : null}
                       </button>
                     ))}
@@ -381,11 +376,7 @@ export default function FeedClient() {
         </div>
 
         {/* COMPOSER (drag/drop enabled) */}
-        <div
-          className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm"
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-        >
+        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm" onDrop={onDrop} onDragOver={onDragOver}>
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -405,24 +396,15 @@ export default function FeedClient() {
                 <div key={a.url} className="relative">
                   {a.kind === "image" ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={a.url}
-                      alt={a.name || ""}
-                      className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
-                    />
+                    <img src={a.url} alt={a.name || ""} className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover" />
                   ) : (
-                    <video
-                      src={a.url}
-                      className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
-                      muted
-                      playsInline
-                    />
+                    <video src={a.url} className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover" muted playsInline />
                   )}
                   <button
                     type="button"
                     onClick={() => removeAttachment(a.url)}
                     className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
-                    disabled={posting || uploading || (!content.trim() && attachments.length === 0)}
+                    disabled={posting || uploading}
                   >
                     ×
                   </button>
@@ -475,27 +457,26 @@ export default function FeedClient() {
               return (
                 <div key={p.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-  <Avatar url={p.profile?.avatarUrl ?? null} label={username} />
-  <div>
-    {profileHref ? (
-      <Link href={profileHref} className="font-semibold hover:underline">
-        @{username}
-      </Link>
-    ) : (
-      <div className="font-semibold text-[#6B7A74]">@unknown</div>
-    )}
+                    <div className="flex items-center gap-2">
+                      <Avatar url={p.profile?.avatarUrl ?? null} label={username} />
+                      <div>
+                        {profileHref ? (
+                          <Link href={profileHref} className="font-semibold hover:underline">
+                            @{username}
+                          </Link>
+                        ) : (
+                          <div className="font-semibold text-[#6B7A74]">@unknown</div>
+                        )}
 
-    {profileHref ? (
-      <Link href={profileHref} className="block text-xs text-[#6B7A74] hover:underline">
-        {style}
-      </Link>
-    ) : (
-      <div className="text-xs text-[#6B7A74]">{style}</div>
-    )}
-  </div>
-</div>
+                        {profileHref ? (
+                          <Link href={profileHref} className="block text-xs text-[#6B7A74] hover:underline">
+                            {style}
+                          </Link>
+                        ) : (
+                          <div className="text-xs text-[#6B7A74]">{style}</div>
+                        )}
+                      </div>
+                    </div>
 
                     <div className="text-xs text-[#6B7A74]">{when}</div>
                   </div>
@@ -510,17 +491,9 @@ export default function FeedClient() {
                         <div key={a.url} className="relative">
                           {a.kind === "image" ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={a.url}
-                              alt={a.name || ""}
-                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
-                            />
+                            <img src={a.url} alt={a.name || ""} className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover" />
                           ) : (
-                            <video
-                              src={a.url}
-                              controls
-                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
-                            />
+                            <video src={a.url} controls className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover" />
                           )}
                         </div>
                       ))}
