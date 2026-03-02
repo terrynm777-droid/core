@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -9,14 +8,8 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
   const router = useRouter();
   const sp = useSearchParams();
 
-  const [active, setActive] = useState<"en" | "ja">(
-    (sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja"
-  );
-
-  useEffect(() => {
-    setActive((sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  // derive active from URL every render (no state, no effect = no stale highlight)
+  const active = (sp.get("feed") === "ja" ? "ja" : "en") as "en" | "ja";
 
   function setFeed(next: "en" | "ja") {
     const params = new URLSearchParams(sp.toString());
@@ -38,11 +31,9 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
               type="button"
               onClick={() => setFeed("en")}
               className={[
-  "w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
-  active === "en"
-    ? "bg-[#22C55E] text-white"
-    : "text-[#0B0F0E] hover:bg-[#F7FAF8]",
-].join(" ")}
+                "w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
+                active === "en" ? "bg-[#22C55E] text-white" : "text-[#0B0F0E] hover:bg-[#F7FAF8]",
+              ].join(" ")}
             >
               English
             </button>
@@ -51,11 +42,9 @@ export default function FeedLayoutClient({ children }: { children: React.ReactNo
               type="button"
               onClick={() => setFeed("ja")}
               className={[
-  "mt-1 w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
-  active === "ja"
-    ? "bg-[#22C55E] text-white"
-    : "text-[#0B0F0E] hover:bg-[#F7FAF8]",
-].join(" ")}
+                "mt-1 w-full text-left rounded-xl px-3 py-2 text-sm font-medium",
+                active === "ja" ? "bg-[#22C55E] text-white" : "text-[#0B0F0E] hover:bg-[#F7FAF8]",
+              ].join(" ")}
             >
               日本語
             </button>

@@ -406,46 +406,53 @@ export default function FeedClient() {
           />
 
           <div className="mt-2 flex items-center gap-2">
-            <AttachmentButton />
-            <AttachmentInput />
-            {uploading ? <div className="text-xs text-[#6B7A74]">Uploading…</div> : null}
-          </div>
+  <AttachmentButton />
+  <AttachmentInput />
 
-          {attachments.length ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(attachments as Attachment[]).map((a) => {
-                const src = a.url || a.previewUrl || "";
-                if (!src) return null;
-                return (
-                  <div key={src} className="relative">
-                    {a.kind === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={src}
-                        alt={a.name || ""}
-                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
-                      />
-                    ) : (
-                      <video
-                        src={src}
-                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
-                        muted
-                        playsInline
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(a.url || a.previewUrl || "")}
-                      className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
-                      disabled={posting || uploading}
-                    >
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
+  <div className="text-xs text-[#6B7A74]">
+    {uploading ? "Uploading…" : attachments.length ? `${attachments.length} file(s) selected` : ""}
+  </div>
+</div>
+
+{attachments.length ? (
+  <div className="mt-2 flex flex-wrap gap-2">
+    {attachments.map((a) => (
+      <div key={a.url} className="relative">
+        {a.kind === "image" ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={a.url}
+            alt={a.name || ""}
+            className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+          />
+        ) : (
+          <video
+            src={a.url}
+            className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+            muted
+            playsInline
+          />
+        )}
+
+        {/* filename pill */}
+        {a.name ? (
+          <div className="absolute bottom-1 left-1 rounded-lg bg-white/90 px-2 py-0.5 text-[10px] text-[#4B5B55] border border-[#D7E4DD] max-w-[88px] truncate">
+            {a.name}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => removeAttachment(a.url)}
+          className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
+          disabled={posting || uploading}
+        >
+          ×
+        </button>
+      </div>
+    ))}
+  </div>
+) : null}
 
           <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#6B7A74]">
             <span>{content.length}/20000</span>
