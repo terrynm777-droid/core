@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import PublicPortfolioCard from "./ui/PublicPortfolioCard";
+import FollowButton from "@/app/components/FollowButton"; // ✅ ADD
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,6 +102,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   }
 
   const isOwner = !!user && user.id === profile.id;
+  const showFollow = !!user && !isOwner; // ✅ ADD (only show follow when logged in + not owner)
 
   const { data: publicPortfolio } = await supabase
     .from("portfolios")
@@ -180,6 +182,12 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
             <div className="flex-1">
               <div className="text-xl font-semibold">@{safeUsername}</div>
               <div className="mt-1 text-sm text-[#6B7A74]">{profile.trader_style || "—"}</div>
+
+              {showFollow ? (
+                <div className="mt-3">
+                  <FollowButton profileId={profile.id} />
+                </div>
+              ) : null}
 
               {profile.bio ? (
                 <div className="mt-3 whitespace-pre-wrap text-sm">{profile.bio}</div>
