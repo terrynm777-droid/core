@@ -26,7 +26,11 @@ async function getLiveQuotes(symbols: string[]) {
     symbols.map(async (sym) => {
       const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`;
       const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) return (out[sym] = 0);
+
+      if (!res.ok) {
+        out[sym] = 0;
+        return;
+      }
 
       const j: any = await res.json().catch(() => null);
       const price = Number(j?.c ?? 0);
@@ -82,7 +86,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, day, processedUsers: 0 });
   }
 
-  // ✅ GROUP BY USER
   const byUser = new Map<
     string,
     { symbol: string; shares: number; currency: string }[]
