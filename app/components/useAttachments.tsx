@@ -1,13 +1,20 @@
-// app/components/useAttachments.tsx
 "use client";
 
 import React, { useCallback, useRef, useState } from "react";
 
 export type Att = {
+  id: string;
   kind: "image" | "video";
-  url: string;          // final public URL (from Supabase)
   name?: string;
-  previewUrl?: string;  // local blob preview for instant UI
+
+  // local preview (blob) so UI shows immediately
+  previewUrl?: string;
+
+  // real public URL after /api/uploads returns
+  url?: string;
+
+  uploading?: boolean;
+  error?: string;
 };
 
 type UploadRes = { url?: string; error?: string };
@@ -16,7 +23,12 @@ async function uploadOne(file: File): Promise<UploadRes> {
   const fd = new FormData();
   fd.append("file", file);
 
-  const res = await fetch("/api/uploads", { method: "POST", body: fd });
+  const res = await fetch("/api/uploads", {
+    method: "POST",
+    body: fd,
+    credentials: "include",
+  });
+
   const json = (await res.json().catch(() => null)) as any;
   if (!res.ok) return { error: json?.error || `HTTP ${res.status}` };
   return { url: json?.url };
@@ -26,54 +38,82 @@ function kindFromFile(file: File): "image" | "video" {
   return file.type?.startsWith("video/") ? "video" : "image";
 }
 
+function uid() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
 export function useAttachments() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<Att[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  const removeAttachment = useCallback((urlOrPreview: string) => {
-    setAttachments((prev) =>
-      prev.filter((a) => a.url !== urlOrPreview && a.previewUrl !== urlOrPreview)
-    );
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const hit = prev.find((a) => a.id === id);
+      if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
+      return prev.filter((a) => a.id !== id);
+    });
+  }, []);
+
+  const clearAttachments = useCallback(() => {
+    setAttachments((prev) => {
+      prev.forEach((a) => {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      });
+      return [];
+    });
   }, []);
 
   const addFiles = useCallback(async (files: File[]) => {
     if (!files.length) return;
 
+    // 1) add previews immediately
+    const items: Att[] = files.map((f) => ({
+      id: uid(),
+      kind: kindFromFile(f),
+      name: f.name,
+      previewUrl: URL.createObjectURL(f),
+      uploading: true,
+    }));
+
+    setAttachments((prev) => [...prev, ...items]);
     setUploading(true);
-    try {
-      // add previews immediately
-      const staged = files.map((f) => ({
-        kind: kindFromFile(f),
-        url: "",
-        name: f.name,
-        previewUrl: URL.createObjectURL(f),
-      }));
 
-      setAttachments((prev) => [...prev, ...staged]);
+    // 2) upload sequentially (predictable)
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const id = items[i].id;
 
-      // upload sequentially (simple + predictable)
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        const out = await uploadOne(f);
+      const out = await uploadOne(f);
 
-        if (!out.url) {
-          // remove failed one
-          const preview = staged[i].previewUrl!;
-          setAttachments((prev) => prev.filter((a) => a.previewUrl !== preview));
-          continue;
-        }
+      setAttachments((prev) =>
+        prev.map((a) => {
+          if (a.id !== id) return a;
 
-        const preview = staged[i].previewUrl!;
-        setAttachments((prev) =>
-          prev.map((a) =>
-            a.previewUrl === preview ? { ...a, url: out.url! } : a
-          )
-        );
-      }
-    } finally {
-      setUploading(false);
+          if (!out.url) {
+            return {
+              ...a,
+              uploading: false,
+              error: out.error || "upload failed",
+            };
+          }
+
+          return {
+            ...a,
+            url: out.url,
+            uploading: false,
+            error: undefined,
+          };
+        })
+      );
     }
+
+    // 3) update global uploading based on current state
+    setAttachments((prev) => {
+      const anyUploading = prev.some((a) => a.uploading);
+      setUploading(anyUploading);
+      return prev;
+    });
   }, []);
 
   const onPickFiles = useCallback(
@@ -129,9 +169,10 @@ export function useAttachments() {
     fileRef,
     attachments,
     uploading,
-    onPickFiles,
+    setAttachments, // legacy: prefer clearAttachments/removeAttachment
+    clearAttachments,
     removeAttachment,
-    setAttachments,
+    onPickFiles,
     onDrop,
     onDragOver,
     AttachmentButton,
