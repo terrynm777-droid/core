@@ -1,3 +1,4 @@
+import { guardWriteEndpoint } from "@/lib/security/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -6,14 +7,13 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ postId: string }> };
 
-export async function GET(_req: NextRequest, { params }: Ctx) {
+export async function GET(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
   const supabase: any = await createClient();
 
   const { data: auth } = await supabase.auth.getUser();
   const user = auth?.user ?? null;
 
-  // total likes
   const { count, error: countErr } = await supabase
     .from("post_likes")
     .select("id", { count: "exact", head: true })
@@ -21,7 +21,6 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 
   if (countErr) return NextResponse.json({ error: countErr.message }, { status: 500 });
 
-  // whether current user liked
   let liked = false;
   if (user) {
     const { data: mine, error: mineErr } = await supabase
@@ -38,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   return NextResponse.json({ postId, liked, likeCount: count ?? 0 }, { status: 200 });
 }
 
-export async function POST(_req: NextRequest, { params }: Ctx) {
+export async function POST(req: NextRequest, { params }: Ctx) {
   const { postId } = await params;
   const supabase: any = await createClient();
 
@@ -49,7 +48,9 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
 
   if (userErr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  // toggle
+  const guard = await guardWriteEndpoint(req, user.id, "posts:like");
+  if (guard) return guard;
+
   const { data: existing, error: exErr } = await supabase
     .from("post_likes")
     .select("id")
@@ -65,7 +66,10 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ postId, liked: false }, { status: 200 });
   }
 
-  const { error: insErr } = await supabase.from("post_likes").insert({ post_id: postId, user_id: user.id });
+  const { error: insErr } = await supabase
+    .from("post_likes")
+    .insert({ post_id: postId, user_id: user.id });
+
   if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
 
   return NextResponse.json({ postId, liked: true }, { status: 200 });

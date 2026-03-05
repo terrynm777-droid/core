@@ -1,3 +1,4 @@
+import { guardWriteEndpoint } from "@/lib/security/guard";
 // app/api/uploads/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -18,6 +19,9 @@ export async function POST(req: Request) {
   if (authErr || !user) {
     return NextResponse.json<UploadResp>({ error: "Not authenticated" }, { status: 401 });
   }
+
+  const guard = await guardWriteEndpoint(req as any, user.id, "uploads");
+  if (guard) return guard;
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");

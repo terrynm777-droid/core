@@ -1,3 +1,4 @@
+import { guardWriteEndpoint } from "@/lib/security/guard";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,8 +13,8 @@ export async function GET(req: Request) {
   const supabase = await createClient();
   const { searchParams } = new URL(req.url);
 
-  const userId = searchParams.get("userId");
-  if (!userId) {
+  const targetUserId = searchParams.get("userId");
+  if (!targetUserId) {
     return NextResponse.json({ error: "userId is required" }, { status: 400 });
   }
 
@@ -24,13 +25,8 @@ export async function GET(req: Request) {
   const follows = followsTable(supabase);
 
   const [{ count: followersCount }, { count: followingCount }] = await Promise.all([
-    follows
-      .select("follower_id", { count: "exact", head: true })
-      .eq("following_id", userId),
-
-    follows
-      .select("following_id", { count: "exact", head: true })
-      .eq("follower_id", userId),
+    follows.select("follower_id", { count: "exact", head: true }).eq("following_id", targetUserId),
+    follows.select("following_id", { count: "exact", head: true }).eq("follower_id", targetUserId),
   ]);
 
   let amIFollowing = false;
@@ -39,7 +35,7 @@ export async function GET(req: Request) {
     const { data } = await follows
       .select("follower_id")
       .eq("follower_id", user.id)
-      .eq("following_id", userId)
+      .eq("following_id", targetUserId)
       .maybeSingle();
 
     amIFollowing = !!data;
@@ -66,6 +62,9 @@ export async function POST(req: Request) {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+
+  const guard = await guardWriteEndpoint(req as any, user.id, "follow");
+  if (guard) return guard;
 
   const body = await req.json().catch(() => null);
   const followingId = String(body?.followingId ?? "").trim();
@@ -103,6 +102,9 @@ export async function DELETE(req: Request) {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+
+  const guard = await guardWriteEndpoint(req as any, user.id, "follow");
+  if (guard) return guard;
 
   const { searchParams } = new URL(req.url);
   const followingId = String(searchParams.get("followingId") ?? "").trim();

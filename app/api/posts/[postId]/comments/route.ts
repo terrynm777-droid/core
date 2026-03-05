@@ -1,3 +1,4 @@
+import { guardWriteEndpoint } from "@/lib/security/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -130,11 +131,15 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const supabase = await createClient();
 
   const { data: auth, error: authErr } = await supabase.auth.getUser();
-  const user = auth?.user;
+const user = auth?.user;
 
-  if (authErr || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: corsHeaders });
-  }
+if (authErr || !user) {
+  return NextResponse.json({ error: "Not authenticated" }, { status: 401, headers: corsHeaders });
+}
+
+const guard = await guardWriteEndpoint(req, user.id, "comments:create");
+if (guard) return guard;
+
 
   const payload = (await req.json().catch(() => null)) as
     | { body?: string; parent_comment_id?: string | null; attachments?: unknown }

@@ -1,3 +1,4 @@
+import { guardWriteEndpoint } from "@/lib/security/guard";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -10,6 +11,7 @@ function normCurrency(c: any) {
 export async function GET() {
   const supabase = await createClient();
   const { data: { user }, error: uerr } = await supabase.auth.getUser();
+
   if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   // ensure portfolio exists
@@ -46,6 +48,10 @@ export async function PATCH(req: Request) {
   const { data: { user }, error: uerr } = await supabase.auth.getUser();
   if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
+    const guard = await guardWriteEndpoint(req as any, user.id, "portfolio:write");
+    if (guard) return guard;
+
+
   const body = (await req.json().catch(() => null)) as any;
   const name = String(body?.name ?? "My Portfolio").slice(0, 60);
   const is_public = Boolean(body?.is_public);
@@ -66,6 +72,10 @@ export async function PUT(req: Request) {
   const supabase = await createClient();
   const { data: { user }, error: uerr } = await supabase.auth.getUser();
   if (uerr || !user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+    const guard = await guardWriteEndpoint(req as any, user.id, "portfolio:write");
+    if (guard) return guard;
+
 
   const body = (await req.json().catch(() => null)) as any;
   const rows = Array.isArray(body?.holdings) ? body.holdings : null;

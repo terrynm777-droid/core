@@ -1,3 +1,4 @@
+import { guardWriteEndpoint } from "@/lib/security/guard";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
