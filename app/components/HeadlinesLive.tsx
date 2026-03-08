@@ -14,6 +14,7 @@ export default function HeadlinesLive() {
   const [items, setItems] = useState<Headline[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const visible = items.slice(0, 4);
 
   async function load() {
     try {
@@ -57,15 +58,11 @@ export default function HeadlinesLive() {
       <div className="rounded-2xl border border-[#F3D6D6] bg-white p-4 text-sm">
         <div className="font-semibold text-[#B42318]">Headlines error</div>
         <div className="mt-1 text-[#6B7A74]">{error}</div>
-        <div className="mt-2 text-xs text-[#6B7A74]">
-          Open <span className="font-mono">/api/headlines</span> on your deployed
-          site to see the raw error.
-        </div>
       </div>
     );
   }
 
-  if (!items.length) {
+  if (!visible.length) {
     return (
       <div className="rounded-2xl border border-[#E5EFEA] bg-white p-4 text-sm text-[#6B7A74]">
         No headlines returned.
@@ -75,7 +72,7 @@ export default function HeadlinesLive() {
 
   return (
     <div className="space-y-3">
-      {items.map((h) => (
+      {visible.map((h) => (
         <a
           key={h.id}
           href={h.url}

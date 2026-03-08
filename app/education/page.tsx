@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 
 type Plan = {
   title: string;
   subtitle: string;
-  price: string;
   description: string;
   bullets: string[];
   cta: string;
@@ -15,7 +16,6 @@ const plans: Plan[] = [
   {
     title: "CORELEARN",
     subtitle: "Free foundation",
-    price: "Free",
     description:
       "Start from zero. Learn what stocks, markets, risk, news, and basic analysis actually mean in a clean step-by-step format.",
     bullets: [
@@ -30,99 +30,105 @@ const plans: Plan[] = [
   {
     title: "COREACADEMY",
     subtitle: "Advanced serious learning",
-    price: "¥9,800–¥29,800+",
     description:
-      "Deep professional learning for serious traders and investors: strategies, frameworks, macro, risk, psychology, Python, and systems.",
+      "Professional-level education for serious traders and investors: strategies, frameworks, macro, risk, psychology, Python, and more.",
     bullets: [
       "Advanced strategy tracks",
       "Risk and portfolio frameworks",
       "Trading systems",
       "Python / algo later",
     ],
-    cta: "View plan",
+    cta: "Locked",
     href: "/education/coreacademy",
     locked: true,
   },
   {
-    title: "CORETEST / CORE検定",
-    subtitle: "Assessment and certification",
-    price: "¥3,000–¥12,000",
+    title: "CORETEST",
+    subtitle: "Online assessment",
     description:
-      "Formal testing and certification layer to verify actual skill and understanding.",
+      "Online testing and certification to verify actual knowledge, not fake confidence.",
     bullets: [
-      "Timed exams",
+      "Timed online exam",
       "Question banks",
       "Certificates later",
-      "Level-based validation",
+      "Skill validation",
     ],
-    cta: "View plan",
+    cta: "Locked",
     href: "/education/coretest",
+    locked: true,
+  },
+  {
+    title: "CORE検定",
+    subtitle: "Paper-style examination",
+    description:
+      "Formal paper-style test track for deeper certified assessment.",
+    bullets: [
+      "Formal exam format",
+      "Higher-stakes validation",
+      "Certificate path",
+      "Advanced assessment",
+    ],
+    cta: "Locked",
+    href: "/education/kentei",
     locked: true,
   },
 ];
 
-function PlanCard({
-  title,
-  subtitle,
-  price,
-  description,
-  bullets,
-  cta,
-  href,
-  locked,
-}: Plan) {
+function PlanCard(plan: Plan) {
   return (
     <div className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xl font-semibold">{title}</div>
-          <div className="mt-1 text-sm text-[#6B7A74]">{subtitle}</div>
-        </div>
-        <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-1 text-sm font-medium">
-          {price}
-        </div>
+      <div>
+        <div className="text-xl font-semibold">{plan.title}</div>
+        <div className="mt-1 text-sm text-[#6B7A74]">{plan.subtitle}</div>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-[#37413D]">{description}</p>
+      <p className="mt-4 text-sm leading-6 text-[#37413D]">{plan.description}</p>
 
       <div className="mt-4 space-y-2">
-        {bullets.map((bullet) => (
-          <div key={bullet} className="text-sm text-[#0B0F0E]">
-            • {bullet}
+        {plan.bullets.map((b) => (
+          <div key={b} className="text-sm text-[#0B0F0E]">
+            • {b}
           </div>
         ))}
       </div>
 
       <div className="mt-6">
         <Link
-          href={href}
+          href={plan.href}
           className={[
             "inline-flex rounded-2xl px-4 py-2 text-sm font-medium transition",
-            locked
-              ? "border border-[#D7E4DD] bg-[#F7FAF8] text-[#0B0F0E] hover:bg-white"
+            plan.locked
+              ? "border border-[#D7E4DD] bg-[#F7FAF8] text-[#6B7A74]"
               : "bg-[#22C55E] text-white hover:opacity-90",
           ].join(" ")}
         >
-          {cta}
+          {plan.cta}
         </Link>
       </div>
     </div>
   );
 }
 
-export default function EducationPage() {
+export default async function EducationPage() {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+
+  if (!auth?.user) {
+    redirect("/auth?next=/education&mode=login");
+  }
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto max-w-6xl">
         <div className="max-w-3xl">
-          <div className="text-4xl font-semibold leading-tight">CORE Education</div>
+          <div className="text-4xl font-semibold leading-tight">Education</div>
           <p className="mt-4 text-lg leading-8 text-[#4B5B55]">
             Structured stock education from absolute beginner to serious professional level.
             Start free with CORELEARN. Unlock deeper tracks later.
           </p>
         </div>
 
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
           {plans.map((plan) => (
             <PlanCard key={plan.title} {...plan} />
           ))}
@@ -138,24 +144,28 @@ export default function EducationPage() {
                   <th className="py-3 pr-4">Feature</th>
                   <th className="py-3 pr-4">CORELEARN</th>
                   <th className="py-3 pr-4">COREACADEMY</th>
-                  <th className="py-3 pr-4">CORETEST / CORE検定</th>
+                  <th className="py-3 pr-4">CORETEST</th>
+                  <th className="py-3 pr-4">CORE検定</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-b border-[#F0F4F1]">
                   <td className="py-3 pr-4">Price</td>
                   <td className="py-3 pr-4">Free</td>
-                  <td className="py-3 pr-4">Paid</td>
-                  <td className="py-3 pr-4">Paid</td>
+                  <td className="py-3 pr-4">$100 / 約¥15,000</td>
+                  <td className="py-3 pr-4">$30 / 約¥4,500</td>
+                  <td className="py-3 pr-4">$100 / 約¥15,000</td>
                 </tr>
                 <tr className="border-b border-[#F0F4F1]">
                   <td className="py-3 pr-4">Audience</td>
                   <td className="py-3 pr-4">Beginners</td>
                   <td className="py-3 pr-4">Serious learners</td>
-                  <td className="py-3 pr-4">Assessment takers</td>
+                  <td className="py-3 pr-4">Online test takers</td>
+                  <td className="py-3 pr-4">Paper exam takers</td>
                 </tr>
                 <tr className="border-b border-[#F0F4F1]">
                   <td className="py-3 pr-4">Language</td>
+                  <td className="py-3 pr-4">EN / 日本語</td>
                   <td className="py-3 pr-4">EN / 日本語</td>
                   <td className="py-3 pr-4">EN / 日本語</td>
                   <td className="py-3 pr-4">EN / 日本語</td>
@@ -165,11 +175,13 @@ export default function EducationPage() {
                   <td className="py-3 pr-4">Yes</td>
                   <td className="py-3 pr-4">Yes</td>
                   <td className="py-3 pr-4">Yes</td>
+                  <td className="py-3 pr-4">Yes</td>
                 </tr>
                 <tr>
                   <td className="py-3 pr-4">Certification</td>
                   <td className="py-3 pr-4">Later</td>
                   <td className="py-3 pr-4">Later</td>
+                  <td className="py-3 pr-4">Main feature</td>
                   <td className="py-3 pr-4">Main feature</td>
                 </tr>
               </tbody>

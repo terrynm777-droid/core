@@ -31,7 +31,7 @@ async function postAuthRedirect(nextSafe: string) {
     if (res.ok) {
       const profile: MeProfile | null = data?.profile ?? null;
       if (!profile?.username) {
-        window.location.href = "/settings/profile";
+        window.location.href = `/settings/profile?next=${encodeURIComponent(nextSafe)}`;
         return;
       }
     }
