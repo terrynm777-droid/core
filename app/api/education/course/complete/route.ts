@@ -1,0 +1,67 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { coreLearnContent } from "@/app/education/corelearn/content";
+
+function makeCourseCertificateCode() {
+  return `CORELEARN-${crypto.randomUUID().slice(0, 10).toUpperCase()}`;
+}
+
+export async function POST(_req: NextRequest) {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+
+  if (!auth?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const allLevelIds = coreLearnContent.map((level) => level.id);
+
+  const { data: quizzes } = await supabase
+    .from("education_level_quiz_attempts")
+    .select("level_id, passed")
+    .eq("user_id", auth.user.id)
+    .eq("product_slug", "corelearn");
+
+  const passedSet = new Set(
+    (quizzes ?? []).filter((q) => q.passed).map((q) => q.level_id)
+  );
+
+  const allPassed = allLevelIds.every((id) => passedSet.has(id));
+
+  if (!allPassed) {
+    return NextResponse.json(
+      { error: "All level quizzes must be passed first" },
+      { status: 400 }
+    );
+  }
+
+  const { data: existing } = await supabase
+    .from("education_course_certificates")
+    .select("certificate_code")
+    .eq("user_id", auth.user.id)
+    .eq("product_slug", "corelearn")
+    .maybeSingle();
+
+  if (existing?.certificate_code) {
+    return NextResponse.json({
+      ok: true,
+      certificateCode: existing.certificate_code,
+    });
+  }
+
+  const code = makeCourseCertificateCode();
+
+  const { error } = await supabase
+    .from("education_course_certificates")
+    .insert({
+      user_id: auth.user.id,
+      product_slug: "corelearn",
+      certificate_code: code,
+    });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, certificateCode: code });
+}

@@ -146,8 +146,21 @@ if (guard) return guard;
     | null;
 
   const text = String(payload?.body ?? "").trim();
-  const parent_comment_id = payload?.parent_comment_id ?? null;
+ const parent_comment_id =
+  payload?.parent_comment_id == null
+    ? null
+    : Number(payload.parent_comment_id);
   const attachments = parseAttachments(payload?.attachments);
+
+  if (
+  parent_comment_id !== null &&
+  (!Number.isInteger(parent_comment_id) || parent_comment_id <= 0)
+) {
+  return NextResponse.json(
+    { error: "invalid parent_comment_id" },
+    { status: 400, headers: corsHeaders }
+  );
+}
 
   if (!text && attachments.length === 0) {
     return NextResponse.json({ error: "body is required" }, { status: 400, headers: corsHeaders });

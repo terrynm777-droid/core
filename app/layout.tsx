@@ -1,22 +1,24 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import CoreLogo from "@/app/components/CoreLogo";
+import TopModuleHeader from "@/app/components/TopModuleHeader";
 import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
   title: "Core",
   description: "Core",
   icons: {
-    icon: [{ url: "/favicon2.ico", type: "image/x-icon" }],
-    shortcut: [{ url: "/favicon2.ico", type: "image/x-icon" }],
+    icon: [{ url: "/favicon.ico", type: "image/x-icon" }],
+    shortcut: [{ url: "/favicon.ico", type: "image/x-icon" }],
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="bg-[#F7FAF8] text-[#0B0F0E]">
         <CoreLogo />
+        <TopModuleHeader />
         {children}
         <Analytics />
       </body>

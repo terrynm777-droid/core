@@ -23,7 +23,6 @@ function pickPatch(body: unknown): Patch {
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(obj, k)) {
       const val = obj[k];
-      // Only allow string or null. Ignore everything else.
       if (isStringOrNull(val)) {
         out[k] = typeof val === "string" ? normalizeString(val) : null;
       }
@@ -36,7 +35,11 @@ function pickPatch(body: unknown): Patch {
 async function getAuthedUser() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
-  if (error) return { supabase, user: null, authError: error.message };
+
+  if (error) {
+    return { supabase, user: null, authError: error.message };
+  }
+
   return { supabase, user: data.user ?? null, authError: null };
 }
 
@@ -82,7 +85,6 @@ export async function PATCH(req: NextRequest) {
 
   const patch = pickPatch(body);
 
-  // if they send nothing usable, do nothing
   if (Object.keys(patch).length === 0) {
     return NextResponse.json(
       { ok: true, changed: false },
@@ -90,10 +92,96 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
-  // Upsert ensures row exists; return updated row for sanity
+  const { data: existingProfile, error: existingError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json(
+      { error: existingError.message },
+      { status: 500 }
+    );
+  }
+
+  if (existingProfile) {
+    const updatePayload: {
+      username?: string;
+      bio?: string | null;
+      trader_style?: string | null;
+      avatar_url?: string | null;
+    } = {};
+
+    if (typeof patch.username === "string" && patch.username.trim().length > 0) {
+      updatePayload.username = patch.username.trim();
+    }
+
+    if (patch.bio !== undefined) {
+      updatePayload.bio = patch.bio;
+    }
+
+    if (patch.trader_style !== undefined) {
+      updatePayload.trader_style = patch.trader_style;
+    }
+
+    if (patch.avatar_url !== undefined) {
+      updatePayload.avatar_url = patch.avatar_url;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(updatePayload)
+      .eq("id", user.id)
+      .select("id, username, bio, trader_style, avatar_url")
+      .single();
+
+    if (error) {
+      return NextResponse.json(
+        { error: error.message, code: (error as any).code ?? null },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(
+      { ok: true, changed: true, profile: data },
+      { status: 200 }
+    );
+  }
+
+  if (typeof patch.username !== "string" || patch.username.trim().length === 0) {
+    return NextResponse.json(
+      { error: "username is required when creating a profile" },
+      { status: 400 }
+    );
+  }
+
+  const insertPayload: {
+    id: string;
+    username: string;
+    bio?: string | null;
+    trader_style?: string | null;
+    avatar_url?: string | null;
+  } = {
+    id: user.id,
+    username: patch.username.trim(),
+  };
+
+  if (patch.bio !== undefined) {
+    insertPayload.bio = patch.bio;
+  }
+
+  if (patch.trader_style !== undefined) {
+    insertPayload.trader_style = patch.trader_style;
+  }
+
+  if (patch.avatar_url !== undefined) {
+    insertPayload.avatar_url = patch.avatar_url;
+  }
+
   const { data, error } = await supabase
     .from("profiles")
-    .upsert({ id: user.id, ...patch }, { onConflict: "id" })
+    .insert(insertPayload)
     .select("id, username, bio, trader_style, avatar_url")
     .single();
 

@@ -105,6 +105,22 @@ export default function Home({
               </Link>
             </div>
 
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <Link
+                href="/auth?next=/education&mode=signup"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#0B0F0E] text-white font-medium hover:brightness-95 shadow-sm"
+              >
+                Start learning
+              </Link>
+
+              <Link
+                href="/auth?next=/education&mode=login"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-2xl border border-[#D7E4DD] bg-white text-[#0B0F0E] font-medium hover:shadow-sm"
+              >
+                CORE Education
+              </Link>
+            </div>
+
             <div className="mt-6 flex flex-wrap gap-2 text-sm text-[#3E4C47]">
               <span className="px-3 py-1 rounded-full bg-white border border-[#D7E4DD]">
                 Live news + prices
@@ -150,11 +166,82 @@ export default function Home({
         </div>
       </section>
 
+      {/* CORE Education section */}
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <div className="rounded-[32px] border border-[#D7E4DD] bg-white p-8 shadow-sm">
+          <div className="max-w-3xl">
+            <div className="text-sm font-semibold text-[#16A34A]">
+              CORE Education
+            </div>
+            <h2 className="mt-3 text-3xl md:text-4xl font-semibold tracking-tight">
+              Learn stocks properly from zero — then go deeper.
+            </h2>
+            <p className="mt-4 text-base md:text-lg text-[#3E4C47] leading-8">
+              CORELEARN is the free entry point for beginners in Japan and beyond.
+              Start from absolute zero in English or Japanese. Later, unlock
+              advanced tracks through COREACADEMY and formal assessment through
+              CORETEST / CORE検定.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            <div className="rounded-3xl border border-[#D7E4DD] bg-[#F7FAF8] p-6">
+              <div className="text-xl font-semibold">CORELEARN</div>
+              <div className="mt-1 text-sm text-[#6B7A74]">Free foundation</div>
+              <p className="mt-4 text-sm leading-6 text-[#3E4C47]">
+                Start from zero. Learn what stocks, markets, risk, news, and
+                basic analysis actually mean.
+              </p>
+              <div className="mt-5 text-sm font-medium text-[#16A34A]">Free</div>
+            </div>
+
+            <div className="rounded-3xl border border-[#D7E4DD] bg-[#F7FAF8] p-6">
+              <div className="text-xl font-semibold">COREACADEMY</div>
+              <div className="mt-1 text-sm text-[#6B7A74]">Advanced serious learning</div>
+              <p className="mt-4 text-sm leading-6 text-[#3E4C47]">
+                Professional-level education for serious traders and investors:
+                strategies, frameworks, macro, risk, psychology, Python, and more.
+              </p>
+              <div className="mt-5 text-sm font-medium text-[#0B0F0E]">
+                ¥9,800–¥29,800+
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[#D7E4DD] bg-[#F7FAF8] p-6">
+              <div className="text-xl font-semibold">CORETEST / CORE検定</div>
+              <div className="mt-1 text-sm text-[#6B7A74]">Assessment and certification</div>
+              <p className="mt-4 text-sm leading-6 text-[#3E4C47]">
+                Formal testing and certification layer to verify actual knowledge,
+                not fake confidence.
+              </p>
+              <div className="mt-5 text-sm font-medium text-[#0B0F0E]">
+                ¥3,000–¥12,000
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 flex flex-col sm:flex-row gap-3">
+            <Link
+              href="/auth?next=/education&mode=signup"
+              className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#22C55E] text-white font-medium hover:brightness-95 shadow-sm"
+            >
+              Start learning
+            </Link>
+
+            <Link
+              href="/auth?next=/education&mode=login"
+              className="inline-flex items-center justify-center px-6 py-3 rounded-2xl border border-[#D7E4DD] bg-white text-[#0B0F0E] font-medium hover:shadow-sm"
+            >
+              View education hub
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="mx-auto max-w-6xl px-6 pb-10 pt-6 text-xs text-[#6B7A74] flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
         <div>© {new Date().getFullYear()} CORE</div>
-        <div className="flex gap-4">
-        </div>
+        <div className="flex gap-4"></div>
       </footer>
     </main>
   );
