@@ -174,10 +174,13 @@ export default function FeedClient() {
 
     try {
       const res = await fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+  body: JSON.stringify(payload),
+});
 
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || "Failed to post");

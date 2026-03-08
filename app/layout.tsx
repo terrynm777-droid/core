@@ -1,6 +1,5 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import CoreLogo from "@/app/components/CoreLogo";
 import TopModuleHeader from "@/app/components/TopModuleHeader";
 import { Analytics } from "@vercel/analytics/react";
 
@@ -13,11 +12,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
       <body className="bg-[#F7FAF8] text-[#0B0F0E]">
-        <CoreLogo />
         <TopModuleHeader />
         {children}
         <Analytics />

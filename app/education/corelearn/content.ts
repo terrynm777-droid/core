@@ -1,7 +1,11 @@
 export type QuizQuestion = {
   question: string;
+  questionJa?: string;
   options: string[];
+  optionsJa?: string[];
   answerIndex: number;
+  explanation?: string;
+  explanationJa?: string;
 };
 
 export type LessonVisual = {
@@ -35,7 +39,6 @@ export type LevelContent = {
   lessons: LessonContent[];
   levelQuiz: QuizQuestion[];
 };
-
 export const coreLearnContent: LevelContent[] = [
   {
     id: "level-0",

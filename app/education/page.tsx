@@ -1,15 +1,17 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 type Plan = {
   title: string;
   subtitle: string;
   description: string;
   bullets: string[];
-  cta: string;
   href: string;
-  locked?: boolean;
+  cta: string;
+  priceLabel: string;
+  buyHref?: string;
+  paid?: boolean;
 };
 
 const plans: Plan[] = [
@@ -24,8 +26,10 @@ const plans: Plan[] = [
       "Structured lessons",
       "Quiz-based progress",
     ],
-    cta: "Start free",
     href: "/education/corelearn",
+    cta: "Start free",
+    priceLabel: "Free",
+    paid: false,
   },
   {
     title: "COREACADEMY",
@@ -38,9 +42,11 @@ const plans: Plan[] = [
       "Trading systems",
       "Python / algo later",
     ],
-    cta: "Locked",
     href: "/education/coreacademy",
-    locked: true,
+    cta: "View details",
+    priceLabel: "$100 / 約¥15,000",
+    buyHref: "/checkout/coreacademy",
+    paid: true,
   },
   {
     title: "CORETEST",
@@ -53,9 +59,11 @@ const plans: Plan[] = [
       "Certificates later",
       "Skill validation",
     ],
-    cta: "Locked",
     href: "/education/coretest",
-    locked: true,
+    cta: "View details",
+    priceLabel: "$30 / 約¥4,500",
+    buyHref: "/checkout/coretest",
+    paid: true,
   },
   {
     title: "CORE検定",
@@ -68,23 +76,33 @@ const plans: Plan[] = [
       "Certificate path",
       "Advanced assessment",
     ],
-    cta: "Locked",
-    href: "/education/kentei",
-    locked: true,
+    href: "/education/coretest/kentei",
+    cta: "View details",
+    priceLabel: "$100 / 約¥15,000",
+    buyHref: "/checkout/corekentei",
+    paid: true,
   },
 ];
 
 function PlanCard(plan: Plan) {
   return (
     <div className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
-      <div>
-        <div className="text-xl font-semibold">{plan.title}</div>
-        <div className="mt-1 text-sm text-[#6B7A74]">{plan.subtitle}</div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-2xl font-semibold text-[#0B0F0E]">{plan.title}</div>
+          <div className="mt-2 text-sm text-[#6B7A74]">{plan.subtitle}</div>
+        </div>
+
+        <div className="rounded-full border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-1 text-sm font-medium text-[#0B0F0E]">
+          {plan.priceLabel}
+        </div>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-[#37413D]">{plan.description}</p>
+      <p className="mt-5 text-base leading-8 text-[#37413D]">
+        {plan.description}
+      </p>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-5 space-y-2">
         {plan.bullets.map((b) => (
           <div key={b} className="text-sm text-[#0B0F0E]">
             • {b}
@@ -92,18 +110,27 @@ function PlanCard(plan: Plan) {
         ))}
       </div>
 
-      <div className="mt-6">
+      <div className="mt-8 flex flex-wrap gap-3">
         <Link
           href={plan.href}
           className={[
-            "inline-flex rounded-2xl px-4 py-2 text-sm font-medium transition",
-            plan.locked
-              ? "border border-[#D7E4DD] bg-[#F7FAF8] text-[#6B7A74]"
-              : "bg-[#22C55E] text-white hover:opacity-90",
+            "inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-medium transition",
+            plan.paid
+              ? "border border-[#D7E4DD] bg-white text-[#0B0F0E] hover:bg-[#F7FAF8]"
+              : "bg-[#22C55E] text-white hover:brightness-95",
           ].join(" ")}
         >
           {plan.cta}
         </Link>
+
+        {plan.buyHref ? (
+          <Link
+            href={plan.buyHref}
+            className="inline-flex items-center justify-center rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-medium text-white transition hover:brightness-95"
+          >
+            Buy now
+          </Link>
+        ) : null}
       </div>
     </div>
   );
@@ -111,20 +138,25 @@ function PlanCard(plan: Plan) {
 
 export default async function EducationPage() {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getUser();
 
-  if (!auth?.user) {
+  if (!data.user) {
     redirect("/auth?next=/education&mode=login");
   }
 
   return (
-    <main className="min-h-screen px-6 py-10">
+    <main className="min-h-screen bg-[#F7FAF8] px-6 py-12 text-[#0B0F0E]">
       <div className="mx-auto max-w-6xl">
-        <div className="max-w-3xl">
-          <div className="text-4xl font-semibold leading-tight">Education</div>
-          <p className="mt-4 text-lg leading-8 text-[#4B5B55]">
+        <div className="max-w-4xl">
+          <div className="text-sm font-semibold text-[#16A34A]">
+            CORE Education
+          </div>
+          <h1 className="mt-4 text-5xl font-semibold leading-tight text-[#0B0F0E]">
+            Learn stocks properly from zero.
+          </h1>
+          <p className="mt-5 text-lg leading-8 text-[#37413D]">
             Structured stock education from absolute beginner to serious professional level.
-            Start free with CORELEARN. Unlock deeper tracks later.
+            Start free with CORELEARN. Unlock deeper tracks through paid products.
           </p>
         </div>
 
@@ -135,20 +167,20 @@ export default async function EducationPage() {
         </div>
 
         <div className="mt-12 rounded-3xl border border-[#D7E4DD] bg-white p-8 shadow-sm">
-          <div className="text-2xl font-semibold">Compare the tracks</div>
+          <div className="text-2xl font-semibold text-[#0B0F0E]">Compare the tracks</div>
 
           <div className="mt-6 overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-[#E6EEE9]">
-                  <th className="py-3 pr-4">Feature</th>
-                  <th className="py-3 pr-4">CORELEARN</th>
-                  <th className="py-3 pr-4">COREACADEMY</th>
-                  <th className="py-3 pr-4">CORETEST</th>
-                  <th className="py-3 pr-4">CORE検定</th>
+                  <th className="py-3 pr-4 text-[#0B0F0E]">Feature</th>
+                  <th className="py-3 pr-4 text-[#0B0F0E]">CORELEARN</th>
+                  <th className="py-3 pr-4 text-[#0B0F0E]">COREACADEMY</th>
+                  <th className="py-3 pr-4 text-[#0B0F0E]">CORETEST</th>
+                  <th className="py-3 pr-4 text-[#0B0F0E]">CORE検定</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="text-[#37413D]">
                 <tr className="border-b border-[#F0F4F1]">
                   <td className="py-3 pr-4">Price</td>
                   <td className="py-3 pr-4">Free</td>

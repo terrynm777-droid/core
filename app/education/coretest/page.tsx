@@ -1,101 +1,84 @@
 import Link from "next/link";
 
-const examLevels = [
-  {
-    title: "Foundation",
-    desc: "Basic stock market understanding, vocabulary, market structure, and beginner literacy.",
-  },
-  {
-    title: "Intermediate",
-    desc: "Company analysis, earnings understanding, risk logic, and practical reasoning.",
-  },
-  {
-    title: "Advanced",
-    desc: "Serious investing/trading frameworks, scenario analysis, and higher-order decision quality.",
-  },
-];
-
 export default function CoreTestPage() {
   return (
-    <main className="min-h-screen px-6 py-10">
-      <div className="mx-auto max-w-6xl">
+    <main className="min-h-screen bg-[#F7FAF8] px-6 py-12 text-[#0B0F0E]">
+      <div className="mx-auto max-w-5xl">
         <div className="max-w-3xl">
-          <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-1 text-sm font-medium inline-flex">
-            Paid
-          </div>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight">CORETEST / CORE検定</h1>
-          <p className="mt-4 text-lg leading-8 text-[#4B5B55]">
-            A formal testing layer designed to verify real stock knowledge through structured exams and progression.
+          <div className="text-sm font-semibold text-[#16A34A]">CORETEST / CORE検定</div>
+          <h1 className="mt-4 text-5xl font-semibold leading-tight">
+            Assessment and certification
+          </h1>
+          <p className="mt-5 text-lg leading-8 text-[#37413D]">
+            Formal testing layers designed to verify real stock knowledge through
+            structured exams and progression.
           </p>
         </div>
 
         <div className="mt-10 grid gap-6 md:grid-cols-3">
-          {examLevels.map((level) => (
-            <div
-              key={level.title}
-              className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm"
-            >
-              <div className="text-xl font-semibold">{level.title}</div>
-              <p className="mt-3 text-sm leading-6 text-[#4B5B55]">{level.desc}</p>
-            </div>
-          ))}
+          <div className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="text-2xl font-semibold">Foundation</div>
+            <p className="mt-4 text-base leading-7 text-[#37413D]">
+              Basic stock market understanding, vocabulary, market structure, and beginner literacy.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="text-2xl font-semibold">Intermediate</div>
+            <p className="mt-4 text-base leading-7 text-[#37413D]">
+              Company analysis, earnings understanding, risk logic, and practical reasoning.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
+            <div className="text-2xl font-semibold">Advanced</div>
+            <p className="mt-4 text-base leading-7 text-[#37413D]">
+              Serious investing and trading frameworks, scenario analysis, and higher-order decision quality.
+            </p>
+          </div>
         </div>
 
         <div className="mt-10 rounded-3xl border border-[#D7E4DD] bg-white p-8 shadow-sm">
-          <div className="text-2xl font-semibold">Planned exam structure</div>
-          <div className="mt-5 overflow-x-auto">
+          <div className="text-2xl font-semibold">Pricing</div>
+
+          <div className="mt-6 overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-[#E6EEE9]">
-                  <th className="py-3 pr-4">Feature</th>
-                  <th className="py-3 pr-4">Foundation</th>
-                  <th className="py-3 pr-4">Intermediate</th>
-                  <th className="py-3 pr-4">Advanced</th>
+                  <th className="py-3 pr-4">Product</th>
+                  <th className="py-3 pr-4">Format</th>
+                  <th className="py-3 pr-4">Price</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="text-[#37413D]">
                 <tr className="border-b border-[#F0F4F1]">
-                  <td className="py-3 pr-4">Question style</td>
-                  <td className="py-3 pr-4">MCQ</td>
-                  <td className="py-3 pr-4">MCQ + reasoning</td>
-                  <td className="py-3 pr-4">Reasoning-heavy</td>
-                </tr>
-                <tr className="border-b border-[#F0F4F1]">
-                  <td className="py-3 pr-4">Time pressure</td>
-                  <td className="py-3 pr-4">Low</td>
-                  <td className="py-3 pr-4">Medium</td>
-                  <td className="py-3 pr-4">High</td>
-                </tr>
-                <tr className="border-b border-[#F0F4F1]">
-                  <td className="py-3 pr-4">Certificate</td>
-                  <td className="py-3 pr-4">Yes</td>
-                  <td className="py-3 pr-4">Yes</td>
-                  <td className="py-3 pr-4">Yes</td>
+                  <td className="py-3 pr-4">CORETEST</td>
+                  <td className="py-3 pr-4">Online exam</td>
+                  <td className="py-3 pr-4">$30 / 約¥4,500</td>
                 </tr>
                 <tr>
-                  <td className="py-3 pr-4">Planned range</td>
-                  <td className="py-3 pr-4">¥3,000</td>
-                  <td className="py-3 pr-4">¥6,000</td>
-                  <td className="py-3 pr-4">¥12,000</td>
+                  <td className="py-3 pr-4">CORE検定</td>
+                  <td className="py-3 pr-4">Paper-style exam</td>
+                  <td className="py-3 pr-4">$100 / 約¥15,000</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          <div className="mt-8 flex gap-3">
+          <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              href="/education"
-              className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:bg-[#F7FAF8]"
+              href="/checkout/coretest"
+              className="inline-flex rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-medium text-white hover:brightness-95"
             >
-              Back
+              Buy CORETEST
             </Link>
-            <button
-              type="button"
-              disabled
-              className="inline-flex rounded-2xl bg-[#0B0F0E] px-4 py-2 text-sm font-medium text-white opacity-60"
+
+            <Link
+              href="/checkout/corekentei"
+              className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-5 py-3 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
             >
-              Locked for now
-            </button>
+              Buy CORE検定
+            </Link>
           </div>
         </div>
       </div>

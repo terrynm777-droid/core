@@ -1,89 +1,78 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
-function itemClass(active: boolean) {
-  return [
-    "inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition",
-    active
-      ? "bg-[#22C55E] text-white shadow-sm"
-      : "border border-[#CFE1D8] bg-[#F3F8F5] text-[#0B0F0E] hover:bg-white",
-  ].join(" ");
+function NavItem({
+  href,
+  label,
+  active,
+}: {
+  href: string;
+  label: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={[
+        "relative px-1 py-2 text-[17px] font-medium transition",
+        active ? "text-[#16A34A]" : "text-[#0B0F0E] hover:text-[#16A34A]",
+      ].join(" ")}
+    >
+      {label}
+      <span
+        className={[
+          "absolute left-0 right-0 -bottom-[10px] h-[2px] rounded-full transition",
+          active ? "bg-[#16A34A]" : "bg-transparent",
+        ].join(" ")}
+      />
+    </Link>
+  );
 }
 
 export default function TopModuleHeader() {
   const pathname = usePathname();
-
-  if (pathname.startsWith("/auth")) return null;
 
   const isChat = pathname.startsWith("/feed");
   const isNews = pathname.startsWith("/news");
   const isEducation = pathname.startsWith("/education");
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#D7E4DD] bg-[#EEF6F1]/95 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-        <Link
-          href="/"
-          className="flex items-center gap-3 rounded-2xl border border-[#D7E4DD] bg-white px-4 py-3 shadow-[0_1px_0_rgba(11,15,14,0.04)]"
-        >
-          <Image
-            src="/brand/core-mark.png"
-            alt="CORE"
-            width={40}
-            height={40}
-            className="rounded-xl"
-            priority
-          />
+    <header className="sticky top-0 z-50 border-b border-[#D7E4DD] bg-[#EEF4F0]/95 backdrop-blur">
+      <div className="mx-auto flex h-[82px] max-w-6xl items-center justify-between px-6">
+        <Link href="/" className="flex items-center">
           <Image
             src="/brand/core-logo.png"
             alt="CORE"
-            width={110}
-            height={30}
+            width={150}
+            height={42}
             priority
+            className="h-auto w-[150px]"
           />
         </Link>
 
-        <nav className="hidden items-center gap-3 md:flex">
-          <Link href="/feed" className={itemClass(isChat)}>
-            Chat
-          </Link>
-          <Link href="/news" className={itemClass(isNews)}>
-            News
-          </Link>
-          <Link href="/education" className={itemClass(isEducation)}>
-            Education
-          </Link>
+        <nav className="hidden items-center gap-10 md:flex">
+          <NavItem href="/feed" label="Chat" active={isChat} />
+          <NavItem href="/news" label="News" active={isNews} />
+          <NavItem href="/education" label="Education" active={isEducation} />
         </nav>
 
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-2xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm font-medium hover:bg-[#F3F7F5]"
+            className="rounded-full border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
           >
             🇺🇸 EN
           </button>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-2xl border border-[#D7E4DD] bg-white px-3 py-2 text-sm font-medium hover:bg-[#F3F7F5]"
+            className="rounded-full border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
           >
             🇯🇵 日本語
           </button>
         </div>
-      </div>
-
-      <div className="mx-auto flex max-w-6xl gap-3 px-6 pb-4 md:hidden">
-        <Link href="/feed" className={itemClass(isChat)}>
-          Chat
-        </Link>
-        <Link href="/news" className={itemClass(isNews)}>
-          News
-        </Link>
-        <Link href="/education" className={itemClass(isEducation)}>
-          Education
-        </Link>
       </div>
     </header>
   );
