@@ -52,7 +52,7 @@ export default function Home({
               </Link>
 
               <Link
-                href="/education"
+                href="/auth?next=/education&mode=signup"
                 className="inline-flex items-center justify-center rounded-2xl border border-[#BFE8CF] bg-white px-6 py-3 font-medium text-[#0B0F0E] hover:shadow-sm"
               >
                 Start learning

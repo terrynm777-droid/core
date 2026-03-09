@@ -35,7 +35,6 @@ const TOPIC_PRESETS: { key: string; label: string; q: string; category?: string 
   { key: "culture", label: "🎭 Culture", q: "culture OR entertainment OR film OR music OR celebrity" },
   { key: "sports", label: "🏟️ Sports", q: "sports OR tournament OR league OR match" },
 
-  // sentinel -> /api/news-jp (Japanese language feed)
   { key: "jp_ja", label: "🇯🇵 日本語", q: "__JP_JA__" },
 ];
 
@@ -50,15 +49,21 @@ function safeTime(iso: string) {
 }
 
 function mergeNews(prev: NewsItem[], incoming: NewsItem[]) {
-  // dedupe by URL; incoming overwrites older
   const map = new Map<string, NewsItem>();
 
   for (const it of prev) if (it?.url) map.set(it.url, it);
   for (const it of incoming) if (it?.url) map.set(it.url, it);
 
   const merged = Array.from(map.values());
-  merged.sort((a, b) => safeTime(b.publishedAt) - safeTime(a.publishedAt)); // newest first
+  merged.sort((a, b) => safeTime(b.publishedAt) - safeTime(a.publishedAt));
   return merged.slice(0, 400);
+}
+
+function formatPublishedAt(value: string) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString();
 }
 
 export default function NewsPage() {
@@ -76,7 +81,6 @@ export default function NewsPage() {
     [apiCategory, q]
   );
 
-  // Restore cached history for this filter (so refresh doesn't wipe)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(cacheKey);
@@ -91,7 +95,6 @@ export default function NewsPage() {
     }
   }, [cacheKey]);
 
-  // Persist history for this filter
   useEffect(() => {
     try {
       localStorage.setItem(cacheKey, JSON.stringify(items));
@@ -128,25 +131,26 @@ export default function NewsPage() {
       else setItems((prev) => mergeNews(prev, incoming));
     } catch (e: any) {
       setErr(e?.message || "Failed to load news");
-      // keep items (history) on error
     } finally {
       setLoading(false);
     }
   }
 
-  // Initial fetch (keeps whatever cache restored)
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const hero = items[0] ?? null;
+  const sideItems = items.slice(1, 5);
+  const restItems = items.slice(5);
+
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
-      <div className="mx-auto max-w-5xl space-y-6">
-        {/* Top bar */}
+      <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-semibold">News</h1>
+            <h1 className="text-4xl font-semibold">News</h1>
             <div className="mt-1 text-sm text-[#6B7A74]">Headlines</div>
           </div>
 
@@ -176,7 +180,6 @@ export default function NewsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         {filtersOpen ? (
           <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -228,7 +231,7 @@ export default function NewsPage() {
                 type="button"
                 onClick={() => {
                   setFiltersOpen(false);
-                  load({ category, q, reset: true }); // don’t mix topics
+                  load({ category, q, reset: true });
                 }}
                 className="rounded-2xl bg-[#22C55E] px-5 py-2 text-sm font-medium text-white hover:opacity-95"
               >
@@ -238,55 +241,140 @@ export default function NewsPage() {
           </div>
         ) : null}
 
-        {/* Results */}
-        <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold">News</div>
-            <div className="text-xs text-[#6B7A74]">{loading ? "Loading…" : `${items.length} items`}</div>
+        {err ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {err}
           </div>
+        ) : null}
 
-          {err ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
-          ) : null}
+        {!items.length && !loading ? (
+          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 text-sm text-[#6B7A74] shadow-sm">
+            No results.
+          </div>
+        ) : null}
 
-          {!items.length && !loading ? (
-            <div className="mt-8 text-sm text-[#6B7A74]">No results.</div>
-          ) : (
-            <div className="mt-4 space-y-4">
-              {items.map((it) => (
+        {hero ? (
+          <section className="grid gap-6 lg:grid-cols-[1.45fr_0.95fr]">
+            <a
+              href={hero.url}
+              target="_blank"
+              rel="noreferrer"
+              className="overflow-hidden rounded-3xl border border-[#D7E4DD] bg-white shadow-sm hover:shadow-md"
+            >
+              {hero.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={hero.image}
+                  alt={hero.title}
+                  className="h-[360px] w-full object-cover"
+                />
+              ) : (
+                <div className="h-[360px] w-full bg-[#EAF2EE]" />
+              )}
+
+              <div className="p-6">
+                <div className="text-xs text-[#6B7A74]">
+                  {hero.source || "Unknown"}
+                  {hero.publishedAt ? ` • ${formatPublishedAt(hero.publishedAt)}` : ""}
+                </div>
+
+                <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#0B0F0E]">
+                  {hero.title}
+                </h2>
+
+                {hero.description ? (
+                  <p className="mt-4 text-base leading-8 text-[#37413D]">
+                    {hero.description}
+                  </p>
+                ) : null}
+              </div>
+            </a>
+
+            <div className="space-y-4">
+              {sideItems.map((it) => (
                 <a
                   key={it.url}
                   href={it.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 hover:shadow-sm"
+                  className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm hover:shadow-md"
                 >
-                  <div className="flex items-start gap-4">
+                  <div className="flex gap-4">
                     {it.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={it.image}
-                        alt=""
-                        className="h-16 w-24 rounded-xl border border-[#D7E4DD] object-cover"
+                        alt={it.title}
+                        className="h-20 w-28 rounded-xl object-cover"
                       />
-                    ) : null}
+                    ) : (
+                      <div className="h-20 w-28 rounded-xl bg-[#EAF2EE]" />
+                    )}
 
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold leading-snug">{it.title}</div>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7A74]">
-                        <span>{it.source || "Unknown"}</span>
-                        {it.publishedAt ? <span>• {new Date(it.publishedAt).toLocaleString()}</span> : null}
+                      <div className="text-xs text-[#6B7A74]">
+                        {it.source || "Unknown"}
                       </div>
-                      {it.description ? (
-                        <div className="mt-2 line-clamp-2 text-sm text-[#4B5B55]">{it.description}</div>
-                      ) : null}
+                      <div className="mt-1 text-base font-semibold leading-6 text-[#0B0F0E]">
+                        {it.title}
+                      </div>
                     </div>
                   </div>
                 </a>
               ))}
             </div>
-          )}
-        </div>
+          </section>
+        ) : null}
+
+        {restItems.length ? (
+          <section className="space-y-4">
+            {restItems.map((it) => (
+              <a
+                key={it.url}
+                href={it.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm hover:shadow-sm"
+              >
+                <div className="flex items-start gap-4">
+                  {it.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={it.image}
+                      alt=""
+                      className="h-20 w-32 rounded-xl border border-[#D7E4DD] object-cover"
+                    />
+                  ) : null}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base font-semibold leading-snug text-[#0B0F0E]">
+                      {it.title}
+                    </div>
+
+                    <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7A74]">
+                      <span>{it.source || "Unknown"}</span>
+                      {it.publishedAt ? (
+                        <span>• {formatPublishedAt(it.publishedAt)}</span>
+                      ) : null}
+                    </div>
+
+                    {it.description ? (
+                      <div className="mt-2 line-clamp-2 text-sm text-[#4B5B55]">
+                        {it.description}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </a>
+            ))}
+          </section>
+        ) : null}
+
+        {loading ? (
+          <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 text-sm text-[#6B7A74] shadow-sm">
+            Loading…
+          </div>
+        ) : null}
       </div>
     </main>
   );

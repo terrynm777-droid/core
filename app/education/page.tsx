@@ -87,15 +87,13 @@ const plans: Plan[] = [
 function PlanCard(plan: Plan) {
   return (
     <div className="rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-2xl font-semibold text-[#0B0F0E]">{plan.title}</div>
-          <div className="mt-2 text-sm text-[#6B7A74]">{plan.subtitle}</div>
-        </div>
+      <div>
+        <div className="text-2xl font-semibold text-[#0B0F0E]">{plan.title}</div>
+        <div className="mt-2 text-sm text-[#6B7A74]">{plan.subtitle}</div>
+      </div>
 
-        <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-1 text-sm font-medium text-[#0B0F0E]">
-          {plan.priceLabel}
-        </div>
+      <div className="mt-4 text-sm font-medium text-[#16A34A]">
+        {plan.priceLabel}
       </div>
 
       <p className="mt-5 text-base leading-8 text-[#37413D]">
