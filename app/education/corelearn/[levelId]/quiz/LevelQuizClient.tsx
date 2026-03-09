@@ -95,8 +95,8 @@ export default function LevelQuizClient({
     <div className="mt-6 rounded-3xl border border-[#D7E4DD] bg-white p-8 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold">{level.title} — Mini Quiz</h1>
-          <p className="mt-3 text-base leading-8 text-[#4B5B55]">
+          <h1 className="text-3xl font-semibold text-[#0B0F0E]">{level.title} — Mini Quiz</h1>
+          <p className="mt-3 text-base leading-8 text-[#37413D]">
             Test your understanding before moving on.
           </p>
         </div>
@@ -106,7 +106,7 @@ export default function LevelQuizClient({
             type="button"
             onClick={() => setLang("en")}
             className={[
-              "rounded-full border px-4 py-2 text-sm font-medium",
+              "rounded-2xl border px-4 py-2 text-sm font-medium",
               lang === "en"
                 ? "border-[#22C55E] bg-[#22C55E] text-white"
                 : "border-[#D7E4DD] bg-white text-[#0B0F0E]",
@@ -118,7 +118,7 @@ export default function LevelQuizClient({
             type="button"
             onClick={() => setLang("ja")}
             className={[
-              "rounded-full border px-4 py-2 text-sm font-medium",
+              "rounded-2xl border px-4 py-2 text-sm font-medium",
               lang === "ja"
                 ? "border-[#22C55E] bg-[#22C55E] text-white"
                 : "border-[#D7E4DD] bg-white text-[#0B0F0E]",
@@ -135,22 +135,23 @@ export default function LevelQuizClient({
           const explanationText =
             lang === "ja" && q.explanationJa ? q.explanationJa : q.explanation;
 
+          const options =
+            lang === "ja" && q.optionsJa?.length === q.options.length
+              ? q.optionsJa
+              : q.options;
+
           return (
             <div
               key={i}
               className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-5"
             >
-              <div className="text-sm font-semibold">Question {i + 1}</div>
+              <div className="text-sm font-semibold text-[#0B0F0E]">Question {i + 1}</div>
               <p className="mt-3 text-sm leading-7 text-[#37413D]">{questionText}</p>
 
               <div className="mt-4 space-y-2">
-                {q.options.map((option, j) => {
-                  const optionText =
-                    lang === "ja" && q.optionsJa?.[j] ? q.optionsJa[j] : option;
-
+                {options.map((option, j) => {
                   const selected = answers[i] === j;
                   const correct = q.answerIndex === j;
-
                   const showResult = submitted;
                   const isWrongPicked = showResult && selected && !correct;
                   const isCorrect = showResult && correct;
@@ -176,7 +177,7 @@ export default function LevelQuizClient({
                       ].join(" ")}
                     >
                       <span className="font-semibold">{String.fromCharCode(65 + j)}.</span>
-                      <span>{optionText}</span>
+                      <span>{option}</span>
                     </button>
                   );
                 })}
@@ -185,7 +186,13 @@ export default function LevelQuizClient({
               {submitted ? (
                 <div className="mt-4 rounded-xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#37413D]">
                   <div className="font-semibold text-[#0B0F0E]">
-                    {answers[i] === q.answerIndex ? "Correct" : "Incorrect"}
+                    {answers[i] === q.answerIndex
+                      ? lang === "ja"
+                        ? "正解"
+                        : "Correct"
+                      : lang === "ja"
+                      ? "不正解"
+                      : "Incorrect"}
                   </div>
                   <div className="mt-2">{explanationText}</div>
                 </div>
@@ -202,7 +209,11 @@ export default function LevelQuizClient({
           disabled={saving || submitted || !allAnswered}
           className="inline-flex rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Submit quiz"}
+          {saving
+            ? "Saving..."
+            : lang === "ja"
+            ? "クイズを提出"
+            : "Submit quiz"}
         </button>
 
         {submitted && !savedPassed ? (
@@ -211,14 +222,23 @@ export default function LevelQuizClient({
             onClick={resetQuiz}
             className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-5 py-3 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
           >
-            Retry
+            {lang === "ja" ? "やり直す" : "Retry"}
           </button>
+        ) : null}
+
+        {submitted && savedPassed ? (
+          <Link
+            href={`/education/corelearn/${level.id}`}
+            className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-5 py-3 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
+          >
+            {lang === "ja" ? "レベルに戻る" : "Back to level"}
+          </Link>
         ) : null}
       </div>
 
       {displayScore !== null && displayTotal !== null ? (
         <div className="mt-8 rounded-2xl border border-[#D7E4DD] bg-[#E9F9EF] p-5">
-          <div className="text-lg font-semibold">
+          <div className="text-lg font-semibold text-[#0B0F0E]">
             Score: {displayScore} / {displayTotal}
           </div>
           <div className="mt-2 text-sm text-[#37413D]">
@@ -232,7 +252,7 @@ export default function LevelQuizClient({
             <div className="mt-4">
               <Link
                 href={`/education/corelearn/${level.id}/certificate`}
-                className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:bg-[#F7FAF8]"
+                className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
               >
                 View certificate
               </Link>

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { LessonContent, LevelContent } from "../../content";
 
 export default function LessonViewer({
@@ -49,7 +49,8 @@ export default function LessonViewer({
       ? level.lessons[lessonIndex + 1]
       : null;
 
-  const quickCorrect = quickAnswer === lesson.quickCheck.answerIndex;
+  const quickCorrect = quickSubmitted && quickAnswer === lesson.quickCheck.answerIndex;
+  const canGoNext = completed || quickCorrect;
 
   async function markComplete() {
     if (completed || saving) return;
@@ -75,8 +76,6 @@ export default function LessonViewer({
       setSaving(false);
     }
   }
-
-  const canGoNext = completed;
 
   return (
     <div className="mt-6 rounded-3xl border border-[#D7E4DD] bg-white p-8 shadow-sm">
@@ -289,7 +288,7 @@ export default function LessonViewer({
               "inline-flex rounded-2xl px-4 py-2 text-sm font-medium",
               canGoNext
                 ? "bg-[#22C55E] text-white hover:opacity-90"
-                : "cursor-not-allowed border border-[#D7E4DD] bg-white text-[#6B7A74] pointer-events-none",
+                : "pointer-events-none cursor-not-allowed border border-[#D7E4DD] bg-white text-[#6B7A74]",
             ].join(" ")}
           >
             {lang === "en" ? "Next lesson" : "次のレッスン"}
@@ -301,7 +300,7 @@ export default function LessonViewer({
               "inline-flex rounded-2xl px-4 py-2 text-sm font-medium",
               canGoNext
                 ? "bg-[#22C55E] text-white hover:opacity-90"
-                : "cursor-not-allowed border border-[#D7E4DD] bg-white text-[#6B7A74] pointer-events-none",
+                : "pointer-events-none cursor-not-allowed border border-[#D7E4DD] bg-white text-[#6B7A74]",
             ].join(" ")}
           >
             {lang === "en" ? "Go to level quiz" : "レベルクイズへ"}

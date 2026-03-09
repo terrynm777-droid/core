@@ -93,7 +93,7 @@ function PlanCard(plan: Plan) {
           <div className="mt-2 text-sm text-[#6B7A74]">{plan.subtitle}</div>
         </div>
 
-        <div className="rounded-full border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-1 text-sm font-medium text-[#0B0F0E]">
+        <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-1 text-sm font-medium text-[#0B0F0E]">
           {plan.priceLabel}
         </div>
       </div>

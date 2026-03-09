@@ -8,11 +8,11 @@ export default async function CoreLearnDashboardPage() {
 
   if (!auth?.user) {
     return (
-      <main className="min-h-screen px-6 py-10">
+      <main className="min-h-screen bg-[#F7FAF8] px-6 py-10 text-[#0B0F0E]">
         <div className="mx-auto max-w-5xl">
           <div className="rounded-3xl border border-[#D7E4DD] bg-white p-8 shadow-sm">
             <h1 className="text-3xl font-semibold">CORELEARN Dashboard</h1>
-            <p className="mt-4 text-[#4B5B55]">
+            <p className="mt-4 text-[#37413D]">
               Log in to track your course progress.
             </p>
             <div className="mt-6">
@@ -52,45 +52,58 @@ export default async function CoreLearnDashboardPage() {
     (lessonRows ?? []).map((row) => `${row.level_id}:${row.lesson_slug}`)
   );
 
-  const quizMap = new Map(
-    (quizRows ?? []).map((row) => [row.level_id, row])
-  );
-
-  const certMap = new Map(
-    (certRows ?? []).map((row) => [row.level_id, row.certificate_code])
-  );
+  const quizMap = new Map((quizRows ?? []).map((row) => [row.level_id, row]));
+  const certMap = new Map((certRows ?? []).map((row) => [row.level_id, row.certificate_code]));
 
   const totalLessons = coreLearnContent.reduce((acc, level) => acc + level.lessons.length, 0);
   const doneLessons = lessonRows?.length ?? 0;
   const overallPct = totalLessons > 0 ? Math.round((doneLessons / totalLessons) * 100) : 0;
 
   return (
-    <main className="min-h-screen px-6 py-10">
+    <main className="min-h-screen bg-[#F7FAF8] px-6 py-10 text-[#0B0F0E]">
       <div className="mx-auto max-w-6xl">
         <div className="max-w-3xl">
-          <div className="inline-flex rounded-2xl border border-[#D7E4DD] bg-[#E9F9EF] px-3 py-1 text-sm font-medium">
+          <div className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-3 py-1 text-sm font-medium text-[#16A34A]">
             CORELEARN
           </div>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight">
+          <h1 className="mt-4 text-4xl font-semibold leading-tight text-[#0B0F0E]">
             Your learning dashboard
           </h1>
-          <p className="mt-4 text-lg leading-8 text-[#4B5B55]">
+          <p className="mt-4 text-lg leading-8 text-[#37413D]">
             Track progress, continue levels, and see what is complete.
           </p>
         </div>
 
         <div className="mt-8 rounded-3xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
           <div className="text-sm text-[#6B7A74]">Overall progress</div>
-          <div className="mt-2 text-3xl font-semibold">{overallPct}%</div>
+          <div className="mt-2 text-3xl font-semibold text-[#0B0F0E]">{overallPct}%</div>
           <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-[#EEF4F0]">
             <div
               className="h-full rounded-full bg-[#22C55E]"
               style={{ width: `${overallPct}%` }}
             />
           </div>
-          <div className="mt-3 text-sm text-[#4B5B55]">
+          <div className="mt-3 text-sm text-[#37413D]">
             {doneLessons} / {totalLessons} lessons completed
           </div>
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          <form action="/api/education/course/complete" method="post">
+            <button
+              type="submit"
+              className="inline-flex rounded-2xl bg-[#22C55E] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              Claim CORELEARN certificate
+            </button>
+          </form>
+
+          <Link
+            href="/education/corelearn/certificate"
+            className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
+          >
+            View course certificate
+          </Link>
         </div>
 
         <div className="mt-8 grid gap-6">
@@ -117,13 +130,13 @@ export default async function CoreLearnDashboardPage() {
               >
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div className="max-w-3xl">
-                    <div className="text-xl font-semibold">{level.title}</div>
-                    <p className="mt-3 text-sm leading-6 text-[#4B5B55]">
+                    <div className="text-xl font-semibold text-[#0B0F0E]">{level.title}</div>
+                    <p className="mt-3 text-sm leading-6 text-[#37413D]">
                       {level.desc}
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2 text-sm font-medium">
+                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2 text-sm font-medium text-[#0B0F0E]">
                     {completedCount} / {level.lessons.length} lessons
                   </div>
                 </div>
@@ -136,13 +149,13 @@ export default async function CoreLearnDashboardPage() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-3 text-sm">
-                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2">
+                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2 text-[#0B0F0E]">
                     Quiz: {quiz ? `${quiz.score}/${quiz.total}` : "Not taken"}
                   </div>
-                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2">
+                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2 text-[#0B0F0E]">
                     Passed: {quiz?.passed ? "Yes" : "No"}
                   </div>
-                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2">
+                  <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] px-3 py-2 text-[#0B0F0E]">
                     Certificate: {certCode ? "Issued" : "Not yet"}
                   </div>
                 </div>
@@ -157,7 +170,7 @@ export default async function CoreLearnDashboardPage() {
 
                   <Link
                     href={`/education/corelearn/${level.id}/quiz`}
-                    className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:bg-[#F7FAF8]"
+                    className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
                   >
                     Quiz
                   </Link>
@@ -165,7 +178,7 @@ export default async function CoreLearnDashboardPage() {
                   {certCode ? (
                     <Link
                       href={`/education/corelearn/${level.id}/certificate`}
-                      className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium hover:bg-[#F7FAF8]"
+                      className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
                     >
                       Certificate
                     </Link>

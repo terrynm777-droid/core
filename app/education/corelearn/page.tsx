@@ -6,7 +6,7 @@ export default function CoreLearnPage() {
     <main className="min-h-screen bg-[#F7FAF8] px-6 py-12 text-[#0B0F0E]">
       <div className="mx-auto max-w-5xl">
         <div className="max-w-3xl">
-          <div className="inline-flex rounded-full border border-[#D7E4DD] bg-white px-3 py-1 text-sm font-medium text-[#16A34A]">
+          <div className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-3 py-1 text-sm font-medium text-[#16A34A]">
             Free
           </div>
 

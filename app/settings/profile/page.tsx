@@ -1,15 +1,23 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ProfileEditor from "./ui/ProfileEditor";
+
+function safeNext(next: string | null) {
+  if (!next) return "/feed";
+  if (!next.startsWith("/")) return "/feed";
+  if (next === "/") return "/feed";
+  return next;
+}
 
 export default function ProfileSettingsPage() {
   const router = useRouter();
+  const sp = useSearchParams();
+  const next = safeNext(sp.get("next"));
 
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
       <div className="mx-auto max-w-md">
-        {/* Top row: Back button like portfolio */}
         <div className="mb-4 flex items-center justify-between">
           <button
             type="button"
@@ -38,8 +46,8 @@ export default function ProfileSettingsPage() {
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
           <ProfileEditor
             onSaved={() => {
-              router.push("/"); // feed
-              router.refresh(); // force re-fetch server components
+              router.push(next);
+              router.refresh();
             }}
           />
         </div>
