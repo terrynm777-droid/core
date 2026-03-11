@@ -1,11 +1,12 @@
-import { guardWriteEndpoint } from "@/lib/security/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { guardWriteEndpoint } from "@/lib/security/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ commentId: string }> };
+
 
 export async function GET(req: NextRequest, { params }: Ctx) {
   const { commentId } = await params;
@@ -44,13 +45,27 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => null)) as { body?: string; postId?: string } | null;
+  const guard = await guardWriteEndpoint(req, user.id, "comments:create");
+  if (guard) return guard;
+
+  const body = (await req.json().catch(() => null)) as
+    | { body?: string; postId?: string }
+    | null;
+
   const text = body?.body?.trim();
   const postId = body?.postId;
 
-  if (!text) return NextResponse.json({ error: "body is required" }, { status: 400 });
-  if (!postId) return NextResponse.json({ error: "postId is required" }, { status: 400 });
-  if (text.length > 5000) return NextResponse.json({ error: "max 5,000 chars" }, { status: 400 });
+  if (!text) {
+    return NextResponse.json({ error: "body is required" }, { status: 400 });
+  }
+
+  if (!postId) {
+    return NextResponse.json({ error: "postId is required" }, { status: 400 });
+  }
+
+  if (text.length > 5000) {
+    return NextResponse.json({ error: "max 5,000 chars" }, { status: 400 });
+  }
 
   const parentId = Number(commentId);
   if (!Number.isFinite(parentId)) {
@@ -59,11 +74,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const { data, error } = await supabase
     .from("post_comments" as any)
-    .insert({ post_id: postId, user_id: user.id, body: text, parent_comment_id: parentId })
+    .insert({
+      post_id: postId,
+      user_id: user.id,
+      body: text,
+      parent_comment_id: parentId,
+    })
     .select("id, post_id, user_id, body, created_at, parent_comment_id")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ reply: data }, { status: 201 });
 }

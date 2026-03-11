@@ -22,7 +22,7 @@ export default function Home({
 
   return (
     <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E]">
-      <section className="mx-auto max-w-6xl px-6 pb-10 pt-10">
+      <section className="mx-auto max-w-6xl px-6 pb-10 pt-20 md:pt-28">
         <div className="grid items-start gap-10 md:grid-cols-2">
           <div>
             <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
@@ -36,28 +36,35 @@ export default function Home({
               — not hype.
             </p>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/auth?next=/feed&mode=signup"
-                className="inline-flex items-center justify-center rounded-2xl bg-[#22C55E] px-6 py-3 font-medium text-white shadow-sm hover:brightness-95"
-              >
-                Sign up
-              </Link>
+            <div className="mt-6 flex flex-wrap gap-3">
+  <Link
+    href="/auth?next=/education&mode=signup"
+    className="inline-flex items-center justify-center rounded-2xl bg-[#22C55E] px-6 py-3 font-medium text-white shadow-sm hover:brightness-95"
+  >
+    Sign up
+  </Link>
 
-              <Link
-                href="/auth?next=/feed&mode=login"
-                className="inline-flex items-center justify-center rounded-2xl border border-[#BFE8CF] bg-white px-6 py-3 font-medium text-[#0B0F0E] hover:shadow-sm"
-              >
-                Log in
-              </Link>
+  <Link
+    href="/auth?next=/feed&mode=login"
+    className="inline-flex items-center justify-center rounded-2xl border border-[#BFE8CF] bg-white px-6 py-3 font-medium text-[#0B0F0E] hover:shadow-sm"
+  >
+    Log in
+  </Link>
 
-              <Link
-                href="/auth?next=/education&mode=signup"
-                className="inline-flex items-center justify-center rounded-2xl border border-[#BFE8CF] bg-white px-6 py-3 font-medium text-[#0B0F0E] hover:shadow-sm"
-              >
-                Start learning
-              </Link>
-            </div>
+  <Link
+    href="/auth?next=/education/corelearn&mode=login"
+    className="inline-flex items-center justify-center rounded-2xl border border-[#BFE8CF] bg-white px-6 py-3 font-medium text-[#0B0F0E] hover:shadow-sm"
+  >
+    Start learning
+  </Link>
+
+  <Link
+    href="/education"
+    className="inline-flex items-center justify-center rounded-2xl border border-[#BFE8CF] bg-white px-6 py-3 font-medium text-[#0B0F0E] hover:shadow-sm"
+  >
+    Compare courses
+  </Link>
+</div>
           </div>
 
           <div className="rounded-3xl border border-[#D7E4DD] bg-white p-5 shadow-sm">

@@ -34,14 +34,22 @@ export default function FollowButton({ profileId }: { profileId: string }) {
 
     try {
       if (amIFollowing) {
-        const res = await fetch(`/api/follows?followingId=${encodeURIComponent(profileId)}`, { method: "DELETE" });
+        const res = await fetch(`/api/follows?followingId=${encodeURIComponent(profileId)}`, {
+  method: "DELETE",
+  headers: {
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+});
         if (res.ok) setAmIFollowing(false);
       } else {
         const res = await fetch(`/api/follows`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ followingId: profileId }),
-        });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+  body: JSON.stringify({ followingId: profileId }),
+});
         if (res.ok) setAmIFollowing(true);
       }
       await refresh();

@@ -153,11 +153,14 @@ export default function CommentsThread({
     setErrorMsg(null);
 
     const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: text, attachments: attachments ?? [] }),
-      credentials: "include",
-    });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+  body: JSON.stringify({ body: text, attachments: attachments ?? [] }),
+  credentials: "include",
+});
 
     const json = await res.json().catch(() => null);
 

@@ -5,8 +5,17 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// helper to bypass Supabase generated types for this table
 const followsTable = (supabase: any) => supabase.from("follows");
+
+function readTargetId(body: any, searchParams?: URLSearchParams) {
+  return String(
+    body?.followingId ??
+      body?.target_user_id ??
+      searchParams?.get("followingId") ??
+      searchParams?.get("target_user_id") ??
+      ""
+  ).trim();
+}
 
 // GET /api/follows?userId=<profileId>
 export async function GET(req: Request) {
@@ -67,10 +76,13 @@ export async function POST(req: Request) {
   if (guard) return guard;
 
   const body = await req.json().catch(() => null);
-  const followingId = String(body?.followingId ?? "").trim();
+  const followingId = readTargetId(body);
 
   if (!followingId) {
-    return NextResponse.json({ error: "followingId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "followingId or target_user_id is required" },
+      { status: 400 }
+    );
   }
 
   if (followingId === user.id) {
@@ -79,16 +91,35 @@ export async function POST(req: Request) {
 
   const follows = followsTable(supabase);
 
-  const { error } = await follows.insert({
-    follower_id: user.id,
-    following_id: followingId,
-  });
+  const { error } = await follows.upsert(
+    {
+      follower_id: user.id,
+      following_id: followingId,
+    },
+    {
+      onConflict: "follower_id,following_id",
+      ignoreDuplicates: true,
+    }
+  );
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  const [{ count: followersCount }, { count: followingCount }] = await Promise.all([
+    follows.select("follower_id", { count: "exact", head: true }).eq("following_id", followingId),
+    follows.select("following_id", { count: "exact", head: true }).eq("follower_id", followingId),
+  ]);
+
+  return NextResponse.json(
+    {
+      ok: true,
+      amIFollowing: true,
+      followersCount: followersCount ?? 0,
+      followingCount: followingCount ?? 0,
+    },
+    { status: 200 }
+  );
 }
 
 // DELETE → unfollow
@@ -107,10 +138,14 @@ export async function DELETE(req: Request) {
   if (guard) return guard;
 
   const { searchParams } = new URL(req.url);
-  const followingId = String(searchParams.get("followingId") ?? "").trim();
+  const body = await req.json().catch(() => null);
+  const followingId = readTargetId(body, searchParams);
 
   if (!followingId) {
-    return NextResponse.json({ error: "followingId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "followingId or target_user_id is required" },
+      { status: 400 }
+    );
   }
 
   const follows = followsTable(supabase);
@@ -124,5 +159,18 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  const [{ count: followersCount }, { count: followingCount }] = await Promise.all([
+    follows.select("follower_id", { count: "exact", head: true }).eq("following_id", followingId),
+    follows.select("following_id", { count: "exact", head: true }).eq("follower_id", followingId),
+  ]);
+
+  return NextResponse.json(
+    {
+      ok: true,
+      amIFollowing: false,
+      followersCount: followersCount ?? 0,
+      followingCount: followingCount ?? 0,
+    },
+    { status: 200 }
+  );
 }

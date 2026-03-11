@@ -455,7 +455,7 @@ export default function FeedClient() {
                       type="button"
                       onClick={() => removeAttachment(a.id)}
                       className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs"
-                      disabled={posting || uploading}
+                      disabled={posting}
                     >
                       ×
                     </button>

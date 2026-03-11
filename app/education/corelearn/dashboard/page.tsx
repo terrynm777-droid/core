@@ -59,6 +59,8 @@ export default async function CoreLearnDashboardPage() {
   const doneLessons = lessonRows?.length ?? 0;
   const overallPct = totalLessons > 0 ? Math.round((doneLessons / totalLessons) * 100) : 0;
 
+   const courseCompleted = doneLessons === totalLessons && totalLessons > 0;
+
   return (
     <main className="min-h-screen bg-[#F7FAF8] px-6 py-10 text-[#0B0F0E]">
       <div className="mx-auto max-w-6xl">
@@ -89,22 +91,33 @@ export default async function CoreLearnDashboardPage() {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <form action="/api/education/course/complete" method="post">
-            <button
-              type="submit"
-              className="inline-flex rounded-2xl bg-[#22C55E] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-            >
-              Claim CORELEARN certificate
-            </button>
-          </form>
+  <form action="/api/education/course/complete" method="post">
+    <button
+      type="submit"
+      disabled={!courseCompleted}
+      className={[
+        "inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-medium transition",
+        courseCompleted
+          ? "bg-[#22C55E] text-white hover:brightness-95"
+          : "cursor-not-allowed border border-[#D7E4DD] bg-white text-[#6B7A74] opacity-70",
+      ].join(" ")}
+    >
+      Claim CORELEARN certificate
+    </button>
+  </form>
 
-          <Link
-            href="/education/corelearn/certificate"
-            className="inline-flex rounded-2xl border border-[#D7E4DD] bg-white px-4 py-2 text-sm font-medium text-[#0B0F0E] hover:bg-[#F7FAF8]"
-          >
-            View course certificate
-          </Link>
-        </div>
+  <Link
+    href="/education/corelearn/certificate"
+    className={[
+      "inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-medium transition",
+      courseCompleted
+        ? "border border-[#D7E4DD] bg-white text-[#0B0F0E] hover:bg-[#F7FAF8]"
+        : "pointer-events-none cursor-not-allowed border border-[#D7E4DD] bg-white text-[#6B7A74] opacity-70",
+    ].join(" ")}
+  >
+    View course certificate
+  </Link>
+</div>
 
         <div className="mt-8 grid gap-6">
           {coreLearnContent.map((level) => {

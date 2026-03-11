@@ -109,7 +109,7 @@ export default function ReplyComposer({
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
-                  disabled={sending || uploading}
+                  disabled={sending}
                   className="absolute -right-2 -top-2 rounded-full border border-[#D7E4DD] bg-white px-2 text-xs disabled:opacity-50"
                 >
                   ×

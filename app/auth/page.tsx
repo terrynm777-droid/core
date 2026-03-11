@@ -4,14 +4,31 @@ import AuthClient from "./ui/AuthClient";
 
 export const dynamic = "force-dynamic";
 
+type SearchParams = Promise<{
+  next?: string;
+  mode?: "login" | "signup";
+}>;
+
+async function AuthPageInner({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+
+  return (
+    <AuthClient
+      next={sp.next ?? "/feed"}
+      mode={sp.mode === "signup" ? "signup" : "login"}
+    />
+  );
+}
+
 export default function AuthPage({
   searchParams,
 }: {
-  searchParams?: { next?: string; mode?: "login" | "signup" };
+  searchParams: SearchParams;
 }) {
-  const next = searchParams?.next ?? "/feed";
-  const mode = searchParams?.mode ?? "login";
-
   return (
     <Suspense
       fallback={
@@ -20,7 +37,7 @@ export default function AuthPage({
         </main>
       }
     >
-      <AuthClient next={next} mode={mode} />
+      <AuthPageInner searchParams={searchParams} />
     </Suspense>
   );
 }

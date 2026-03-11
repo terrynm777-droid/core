@@ -44,7 +44,7 @@ const plans: Plan[] = [
     ],
     href: "/education/coreacademy",
     cta: "View details",
-    priceLabel: "$100 / 約¥15,000",
+    priceLabel: "US$100 / 約¥15,000",
     buyHref: "/checkout/coreacademy",
     paid: true,
   },
@@ -61,7 +61,7 @@ const plans: Plan[] = [
     ],
     href: "/education/coretest",
     cta: "View details",
-    priceLabel: "$30 / 約¥4,500",
+    priceLabel: "US$30 / 約¥4,500",
     buyHref: "/checkout/coretest",
     paid: true,
   },
@@ -78,7 +78,7 @@ const plans: Plan[] = [
     ],
     href: "/education/coretest/kentei",
     cta: "View details",
-    priceLabel: "$100 / 約¥15,000",
+    priceLabel: "US$100 / 約¥15,000",
     buyHref: "/checkout/corekentei",
     paid: true,
   },
@@ -182,9 +182,9 @@ export default async function EducationPage() {
                 <tr className="border-b border-[#F0F4F1]">
                   <td className="py-3 pr-4">Price</td>
                   <td className="py-3 pr-4">Free</td>
-                  <td className="py-3 pr-4">$100 / 約¥15,000</td>
-                  <td className="py-3 pr-4">$30 / 約¥4,500</td>
-                  <td className="py-3 pr-4">$100 / 約¥15,000</td>
+                  <td className="py-3 pr-4">US$100 / 約¥15,000</td>
+                  <td className="py-3 pr-4">US$30 / 約¥4,500</td>
+                  <td className="py-3 pr-4">US$100 / 約¥15,000</td>
                 </tr>
                 <tr className="border-b border-[#F0F4F1]">
                   <td className="py-3 pr-4">Audience</td>

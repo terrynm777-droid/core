@@ -55,7 +55,7 @@ export default function TopModuleHeader() {
 
         <nav className="hidden items-center gap-10 md:flex">
           <NavItem href="/feed" label="Chat" active={isChat} />
-          <NavItem href="/news" label="News" active={isNews} />
+          <NavItem href={pathname === "/" ? "/news?from=home" : "/news?from=feed"} label="News" active={isNews} />
           <NavItem href="/education" label="Education" active={isEducation} />
         </nav>
 

@@ -36,9 +36,7 @@ export default function ProfilePageInner() {
         </div>
 
         <div className="mb-6">
-          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">
-            CORE
-          </div>
+          <div className="text-xs uppercase tracking-widest text-[#6B7A74]">CORE</div>
           <h1 className="mt-2 text-2xl font-semibold">Set up your profile</h1>
           <p className="mt-2 text-sm text-[#6B7A74]">
             Choose a username. This is what shows on the feed.

@@ -6,20 +6,16 @@ export type Att = {
   id: string;
   kind: "image" | "video";
   name?: string;
-
-  // local preview (blob) so UI shows immediately
   previewUrl?: string;
-
-  // real public URL after /api/uploads returns
   url?: string;
-
   uploading?: boolean;
   error?: string;
+  abortController?: AbortController;
 };
 
 type UploadRes = { url?: string; error?: string };
 
-async function uploadOne(file: File): Promise<UploadRes> {
+async function uploadOne(file: File, signal?: AbortSignal): Promise<UploadRes> {
   const fd = new FormData();
   fd.append("file", file);
 
@@ -27,6 +23,7 @@ async function uploadOne(file: File): Promise<UploadRes> {
     method: "POST",
     body: fd,
     credentials: "include",
+    signal,
   });
 
   const json = (await res.json().catch(() => null)) as any;
@@ -49,8 +46,16 @@ export function useAttachments() {
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
-      const hit = prev.find((a) => a.id === id);
-      if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
+      const target = prev.find((a) => a.id === id);
+
+      if (target?.abortController) {
+        target.abortController.abort();
+      }
+
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+
       return prev.filter((a) => a.id !== id);
     });
   }, []);
@@ -58,57 +63,79 @@ export function useAttachments() {
   const clearAttachments = useCallback(() => {
     setAttachments((prev) => {
       prev.forEach((a) => {
+        if (a.abortController) a.abortController.abort();
         if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
       });
       return [];
     });
+    setUploading(false);
   }, []);
 
   const addFiles = useCallback(async (files: File[]) => {
     if (!files.length) return;
 
-    // 1) add previews immediately
     const items: Att[] = files.map((f) => ({
       id: uid(),
       kind: kindFromFile(f),
       name: f.name,
       previewUrl: URL.createObjectURL(f),
       uploading: true,
+      abortController: new AbortController(),
     }));
 
     setAttachments((prev) => [...prev, ...items]);
     setUploading(true);
 
-    // 2) upload sequentially (predictable)
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const id = items[i].id;
+      const item = items[i];
+      const id = item.id;
 
-      const out = await uploadOne(f);
+      try {
+        const out = await uploadOne(f, item.abortController?.signal);
 
-      setAttachments((prev) =>
-        prev.map((a) => {
-          if (a.id !== id) return a;
+        setAttachments((prev) =>
+          prev.map((a) => {
+            if (a.id !== id) return a;
 
-          if (!out.url) {
+            if (!out.url) {
+              return {
+                ...a,
+                uploading: false,
+                error: out.error || "upload failed",
+                abortController: undefined,
+              };
+            }
+
             return {
               ...a,
+              url: out.url,
               uploading: false,
-              error: out.error || "upload failed",
+              error: undefined,
+              abortController: undefined,
             };
-          }
-
-          return {
-            ...a,
-            url: out.url,
-            uploading: false,
-            error: undefined,
-          };
-        })
-      );
+          })
+        );
+      } catch (e: any) {
+        if (e?.name === "AbortError") {
+          setAttachments((prev) => prev.filter((a) => a.id !== id));
+        } else {
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.id === id
+                ? {
+                    ...a,
+                    uploading: false,
+                    error: "upload failed",
+                    abortController: undefined,
+                  }
+                : a
+            )
+          );
+        }
+      }
     }
 
-    // 3) update global uploading based on current state
     setAttachments((prev) => {
       const anyUploading = prev.some((a) => a.uploading);
       setUploading(anyUploading);
@@ -158,18 +185,17 @@ export function useAttachments() {
         onClick={() => fileRef.current?.click()}
         className="h-9 w-9 rounded-xl border border-[#D7E4DD] bg-white text-sm hover:shadow-sm"
         aria-label="Add attachment"
-        disabled={uploading}
       >
         +
       </button>
     );
-  }, [uploading]);
+  }, []);
 
   return {
     fileRef,
     attachments,
     uploading,
-    setAttachments, // legacy: prefer clearAttachments/removeAttachment
+    setAttachments,
     clearAttachments,
     removeAttachment,
     onPickFiles,
