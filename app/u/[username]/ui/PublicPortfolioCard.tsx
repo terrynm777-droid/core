@@ -225,8 +225,9 @@ export default function PublicPortfolioCard(props: {
 
   const { seriesDays, seriesRaw } = useMemo(() => {
     const pts = [...snapPoints]
-      .filter((p) => p.day && p.day.length >= 10)
-      .sort((a, b) => a.day.localeCompare(b.day));
+  .filter((p) => p.day && p.day.length >= 10)
+  .sort((a, b) => a.day.localeCompare(b.day))
+  .slice(-7); // last 7 days only
 
     const days = pts.map((p) => p.day);
     const raw = pts.map((p) => Number(p.total_usd));
