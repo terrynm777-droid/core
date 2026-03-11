@@ -3,7 +3,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import PublicPortfolioCard from "./ui/PublicPortfolioCard";
-import FollowButton from "@/app/components/FollowButton"; // ✅ ADD
+import FollowButton from "@/app/components/FollowButton";
+import LinkPreview from "@/app/components/LinkPreview";
+import { firstUrl, renderWithLinks } from "@/app/components/textLinks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,10 +18,17 @@ type ProfileRow = {
   trader_style: string | null;
 };
 
+type Attachment = {
+  kind: "image" | "video";
+  url: string;
+  name?: string;
+};
+
 type PostRow = {
   id: string;
   content: string;
   created_at: string;
+  attachments?: Attachment[] | null;
 };
 
 type PublicPortfolioRow = {
@@ -36,9 +45,15 @@ type HoldingRow = {
   currency: string | null;
 };
 
-function Shell({ children, title = "Back to feed" }: { children: ReactNode; title?: string }) {
+function Shell({
+  children,
+  title = "Back to feed",
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
   return (
-    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+    <main className="min-h-screen bg-[#F7FAF8] px-6 py-10 text-[#0B0F0E]">
       <div className="mx-auto max-w-2xl space-y-6">
         <Link
           href="/feed"
@@ -52,7 +67,11 @@ function Shell({ children, title = "Back to feed" }: { children: ReactNode; titl
   );
 }
 
-export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
+export default async function PublicProfilePage({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}) {
   const supabase = await createClient();
 
   const { username: raw } = await params;
@@ -102,7 +121,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   }
 
   const isOwner = !!user && user.id === profile.id;
-  const showFollow = !!user && !isOwner; // ✅ ADD (only show follow when logged in + not owner)
+  const showFollow = !!user && !isOwner;
 
   const { data: publicPortfolio } = await supabase
     .from("portfolios")
@@ -126,13 +145,13 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
 
   const { data: posts } = await supabase
     .from("posts")
-    .select("id, content, created_at")
+    .select("id, content, created_at, attachments")
     .eq("author_id", profile.id)
     .order("created_at", { ascending: false })
     .limit(20);
 
   return (
-    <main className="min-h-screen bg-[#F7FAF8] text-[#0B0F0E] px-6 py-10">
+    <main className="min-h-screen bg-[#F7FAF8] px-6 py-10 text-[#0B0F0E]">
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="flex items-center justify-between">
           <Link
@@ -162,12 +181,10 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
           )}
         </div>
 
-        {/* Profile card */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-white p-6 shadow-sm">
           <div className="flex items-start gap-4">
-            <div className="h-14 w-14 overflow-hidden rounded-full border border-[#D7E4DD] bg-[#F7FAF8] grid place-items-center">
+            <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-full border border-[#D7E4DD] bg-[#F7FAF8]">
               {profile.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={profile.avatar_url}
                   alt="Avatar"
@@ -175,13 +192,17 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <span className="text-sm font-semibold text-[#6B7A74]">{initial}</span>
+                <span className="text-sm font-semibold text-[#6B7A74]">
+                  {initial}
+                </span>
               )}
             </div>
 
             <div className="flex-1">
               <div className="text-xl font-semibold">@{safeUsername}</div>
-              <div className="mt-1 text-sm text-[#6B7A74]">{profile.trader_style || "—"}</div>
+              <div className="mt-1 text-sm text-[#6B7A74]">
+                {profile.trader_style || "—"}
+              </div>
 
               {showFollow ? (
                 <div className="mt-3">
@@ -190,7 +211,9 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
               ) : null}
 
               {profile.bio ? (
-                <div className="mt-3 whitespace-pre-wrap text-sm">{profile.bio}</div>
+                <div className="mt-3 whitespace-pre-wrap text-sm">
+                  {profile.bio}
+                </div>
               ) : (
                 <div className="mt-3 text-sm text-[#6B7A74]">No bio yet.</div>
               )}
@@ -198,7 +221,6 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        {/* Portfolio */}
         <div className="space-y-3">
           <div className="text-sm font-semibold">Portfolio</div>
 
@@ -219,19 +241,56 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
           )}
         </div>
 
-        {/* Posts */}
         <div className="space-y-3">
           <div className="text-sm font-semibold">Recent posts</div>
 
           {posts && posts.length ? (
-            (posts as PostRow[]).map((p) => (
-              <div key={p.id} className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm">
-                <div className="text-xs text-[#6B7A74]">{new Date(p.created_at).toLocaleString()}</div>
-                <div className="mt-2 whitespace-pre-wrap text-sm">{p.content}</div>
-              </div>
-            ))
+            (posts as PostRow[]).map((p) => {
+              const url = firstUrl(p.content);
+
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-2xl border border-[#D7E4DD] bg-white p-4 shadow-sm"
+                >
+                  <div className="text-xs text-[#6B7A74]">
+                    {new Date(p.created_at).toLocaleString()}
+                  </div>
+
+                  <div className="mt-2 whitespace-pre-wrap text-sm">
+                    {renderWithLinks(p.content)}
+                  </div>
+
+                  {url ? <LinkPreview url={url} /> : null}
+
+                  {Array.isArray(p.attachments) && p.attachments.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {p.attachments.map((a) => (
+                        <div key={a.url} className="relative">
+                          {a.kind === "image" ? (
+                            <img
+                              src={a.url}
+                              alt={a.name || ""}
+                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+                            />
+                          ) : (
+                            <video
+                              src={a.url}
+                              controls
+                              className="h-28 w-40 rounded-2xl border border-[#D7E4DD] object-cover"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
           ) : (
-            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#6B7A74]">No posts yet.</div>
+            <div className="rounded-2xl border border-[#D7E4DD] bg-white p-4 text-sm text-[#6B7A74]">
+              No posts yet.
+            </div>
           )}
         </div>
       </div>

@@ -1,4 +1,3 @@
-// app/u/[username]/ui/PublicPortfolioCard.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -6,8 +5,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 type HoldingRow = {
   id: string;
   symbol: string;
-  amount: number; // shares (stored)
-  currency: string | null; // trade currency (stored)
+  amount: number;
+  currency: string | null;
 };
 
 type PublicSnapPoint = { day: string; total_usd: number };
@@ -42,7 +41,10 @@ function clampIdx(i: number, n: number) {
 function fmtMoney(x: number) {
   const n = Number(x);
   if (!Number.isFinite(n)) return "0.00";
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function fmtPct(x: number) {
@@ -57,15 +59,6 @@ function shortDay(day: string) {
   return `${day.slice(5, 7)}/${day.slice(8, 10)}`;
 }
 
-function normalizeToPct(series: number[]) {
-  // Day-over-day % change series (what users expect for "% Change")
-  return series.map((v, i) => {
-    if (!Number.isFinite(v)) return NaN;
-    if (i === 0) return 0;
-    return dayOverDayPct(series, i);
-  });
-}
-
 function dayOverDayPct(series: number[], i: number) {
   if (i <= 0) return NaN;
   const prev = Number(series[i - 1]);
@@ -76,7 +69,13 @@ function dayOverDayPct(series: number[], i: number) {
 
 function buildConicGradient(items: { label: string; value: number; color: string }[]) {
   const total = items.reduce((a, x) => a + x.value, 0);
-  if (!total) return { gradient: "conic-gradient(#E6EEE9 0 100%)", rows: [] as any[], total: 0 };
+  if (!total) {
+    return {
+      gradient: "conic-gradient(#E6EEE9 0 100%)",
+      rows: [] as Array<{ label: string; value: number; color: string; pct: number }>,
+      total: 0,
+    };
+  }
 
   let acc = 0;
   const stops: string[] = [];
@@ -98,15 +97,18 @@ function buildConicGradient(items: { label: string; value: number; color: string
 async function fetchJsonOrThrow(url: string) {
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
+
   let json: any = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {}
+
   if (!res.ok) {
     const rawMsg = json?.error || text || res.statusText || "Request failed";
     const msg = String(rawMsg).replace(/^\s*\d+\s*/, "").trim();
     throw new Error(`${res.status} ${msg}`.trim());
   }
+
   return json;
 }
 
@@ -120,7 +122,6 @@ function safeStr(x: any, fallback = "") {
   return s ? s : fallback;
 }
 
-// Deterministic, unlimited colors (no palette collisions). Unique per symbol within a render set.
 function fnv1a32(str: string) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -135,12 +136,15 @@ function hslColor(hue: number, sat = 62, light = 46) {
   return `hsl(${h} ${sat}% ${light}%)`;
 }
 
-// Assign each label a distinct hue (golden-angle spacing), deterministic per username+labels.
 function assignDistinctColors(labels: string[], seedKey: string) {
-  const uniq = Array.from(new Set(labels.filter(Boolean).map((s) => s.toUpperCase()))).sort((a, b) => a.localeCompare(b));
+  const uniq = Array.from(
+    new Set(labels.filter(Boolean).map((s) => s.toUpperCase()))
+  ).sort((a, b) => a.localeCompare(b));
+
   const seed = fnv1a32(seedKey + "::" + uniq.join("|"));
   const baseHue = seed % 360;
-  const golden = 137.508; // degrees
+  const golden = 137.508;
+
   const map: Record<string, string> = {};
   for (let i = 0; i < uniq.length; i++) {
     const hue = baseHue + i * golden;
@@ -169,7 +173,9 @@ export default function PublicPortfolioCard(props: {
       setErr(null);
 
       try {
-        const liveJson = await fetchJsonOrThrow(`/api/public/portfolio/value?username=${encodeURIComponent(username)}`);
+        const liveJson = await fetchJsonOrThrow(
+          `/api/public/portfolio/value?username=${encodeURIComponent(username)}`
+        );
 
         const positions: LivePosition[] = Array.isArray(liveJson?.positions)
           ? liveJson.positions.map((p: any): LivePosition => ({
@@ -191,7 +197,10 @@ export default function PublicPortfolioCard(props: {
           positions,
         };
 
-        const snapJson = await fetchJsonOrThrow(`/api/public/portfolio/snapshot?username=${encodeURIComponent(username)}`);
+        const snapJson = await fetchJsonOrThrow(
+          `/api/public/portfolio/snapshot?username=${encodeURIComponent(username)}`
+        );
+
         const pts = Array.isArray(snapJson?.points) ? snapJson.points : [];
         const nextSnaps = pts.map((p: any) => ({
           day: String(p.day),
@@ -208,12 +217,12 @@ export default function PublicPortfolioCard(props: {
     }
 
     load();
+
     return () => {
       alive = false;
     };
   }, [username]);
 
-  // Build chart series from snapshots; force last point = live.totalUsd
   const { seriesDays, seriesRaw } = useMemo(() => {
     const pts = [...snapPoints]
       .filter((p) => p.day && p.day.length >= 10)
@@ -222,54 +231,59 @@ export default function PublicPortfolioCard(props: {
     const days = pts.map((p) => p.day);
     const raw = pts.map((p) => Number(p.total_usd));
 
-    const liveTotal = live && Number.isFinite(live.totalUsd) ? Number(live.totalUsd) : NaN;
+    const liveTotal =
+      live && Number.isFinite(live.totalUsd) ? Number(live.totalUsd) : NaN;
 
     if (days.length === 0) {
-      return { seriesDays: [todayDay], seriesRaw: [Number.isFinite(liveTotal) ? liveTotal : NaN] };
+      if (Number.isFinite(liveTotal)) {
+        return { seriesDays: [todayDay], seriesRaw: [liveTotal] };
+      }
+      return { seriesDays: [], seriesRaw: [] };
     }
 
     const lastDay = days[days.length - 1];
 
-if (lastDay === todayDay) {
-  // overwrite today's snapshot with live value if we have it
-  if (Number.isFinite(liveTotal)) {
-    raw[raw.length - 1] = liveTotal;
-  }
-} else if (todayDay > lastDay) {
-  // add today ONLY if live value exists (never push NaN)
-  if (Number.isFinite(liveTotal)) {
-    days.push(todayDay);
-    raw.push(liveTotal);
-  }
-} else {
-  // safety: future-dated snapshot edge case
-  if (Number.isFinite(liveTotal)) {
-    raw[raw.length - 1] = liveTotal;
-  }
-}
+    if (lastDay === todayDay) {
+      if (Number.isFinite(liveTotal)) {
+        raw[raw.length - 1] = liveTotal;
+      }
+    } else if (todayDay > lastDay) {
+      if (Number.isFinite(liveTotal)) {
+        days.push(todayDay);
+        raw.push(liveTotal);
+      }
+    } else {
+      if (Number.isFinite(liveTotal)) {
+        raw[raw.length - 1] = liveTotal;
+      }
+    }
 
     return { seriesDays: days, seriesRaw: raw };
   }, [snapPoints, live, todayDay]);
 
   const seriesDayPct = useMemo(() => {
-  const out = seriesRaw.map((_, i) => dayOverDayPct(seriesRaw, i));
-  if (out.length) out[0] = 0;
+    if (!seriesRaw.length) return [];
 
-  const last = out.length - 1;
-  if (
-    last >= 0 &&
-    seriesDays[last] === todayDay &&
-    live &&
-    Number.isFinite(Number(live.dayChangePct))
-  ) {
-    out[last] = Number(live.dayChangePct);
-  }
+    const out = seriesRaw.map((_, i) => dayOverDayPct(seriesRaw, i));
+    out[0] = 0;
 
-  return out;
-}, [seriesRaw, seriesDays, todayDay, live]);
+    const last = out.length - 1;
+    if (
+      last >= 0 &&
+      seriesDays[last] === todayDay &&
+      live &&
+      Number.isFinite(Number(live.dayChangePct))
+    ) {
+      out[last] = Number(live.dayChangePct);
+    }
 
-  // USD allocation pie (authoritative from live.positions.nowUsd)
-  const livePositions = useMemo(() => (live?.positions ?? []).filter((p) => p.nowUsd > 0), [live]);
+    return out;
+  }, [seriesRaw, seriesDays, todayDay, live]);
+
+  const livePositions = useMemo(
+    () => (live?.positions ?? []).filter((p) => p.nowUsd > 0),
+    [live]
+  );
 
   const colorMap = useMemo(() => {
     const labels = livePositions.map((p) => p.symbol);
@@ -288,10 +302,13 @@ if (lastDay === todayDay) {
       }));
   }, [livePositions, colorMap]);
 
-  const { gradient, rows: pieRows, total: pieTotal } = useMemo(() => buildConicGradient(pieItems), [pieItems]);
+  const { gradient, rows: pieRows, total: pieTotal } = useMemo(
+    () => buildConicGradient(pieItems),
+    [pieItems]
+  );
 
   return (
-    <div className="rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm space-y-4">
+    <div className="space-y-4 rounded-2xl border border-[#D7E4DD] bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-semibold">{portfolioName}</div>
@@ -300,14 +317,28 @@ if (lastDay === todayDay) {
 
         <div className="text-right">
           <div className="text-xs text-[#6B7A74]">Total (USD)</div>
-          <div className="text-sm font-semibold">{live && Number.isFinite(live.totalUsd) ? `$${fmtMoney(live.totalUsd)}` : "—"}</div>
+          <div className="text-sm font-semibold">
+            {live && Number.isFinite(live.totalUsd)
+              ? `$${fmtMoney(live.totalUsd)} USD`
+              : "—"}
+          </div>
           <div className="text-xs text-[#6B7A74]">
             Today{" "}
-            <span className={live && Number(live.dayChangePct) >= 0 ? "text-green-600" : "text-red-600"}>
-              {live && Number.isFinite(live.dayChangePct) ? fmtPct(live.dayChangePct) : "—"}
+            <span
+              className={
+                live && Number(live.dayChangePct) >= 0
+                  ? "text-green-600"
+                  : "text-red-600"
+              }
+            >
+              {live && Number.isFinite(live.dayChangePct)
+                ? fmtPct(live.dayChangePct)
+                : "—"}
             </span>
             {live && Number.isFinite(live.dayChangeAmount) ? (
-              <span className="ml-2 text-[#6B7A74]">({fmtMoney(live.dayChangeAmount)})</span>
+              <span className="ml-2 text-[#6B7A74]">
+                (${fmtMoney(live.dayChangeAmount)} USD)
+              </span>
             ) : null}
           </div>
         </div>
@@ -316,12 +347,11 @@ if (lastDay === todayDay) {
       {err ? <div className="text-sm text-red-700">{err}</div> : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        {/* Pie */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Allocation</div>
             <div className="text-xs text-[#6B7A74]">
-              {pieRows.length ? `${pieRows.length} positions • $${fmtMoney(pieTotal)}` : ""}
+              {pieRows.length ? `${pieRows.length} positions • $${fmtMoney(pieTotal)} USD` : ""}
             </div>
           </div>
 
@@ -336,21 +366,29 @@ if (lastDay === todayDay) {
                 pieRows.slice(0, 6).map((r: any) => (
                   <div key={r.label} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: r.color }}
+                      />
                       <span className="font-medium">{r.label}</span>
                     </div>
-                    <span className="text-[#6B7A74]">{clamp(r.pct, 0, 100).toFixed(1)}%</span>
+                    <span className="text-[#6B7A74]">
+                      {clamp(r.pct, 0, 100).toFixed(1)}%
+                    </span>
                   </div>
                 ))
               ) : (
                 <div className="text-xs text-[#6B7A74]">No positions yet.</div>
               )}
-              {pieRows.length > 6 ? <div className="text-[11px] text-[#6B7A74]">+ {pieRows.length - 6} more</div> : null}
+              {pieRows.length > 6 ? (
+                <div className="text-[11px] text-[#6B7A74]">
+                  + {pieRows.length - 6} more
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
 
-        {/* Chart */}
         <div className="rounded-2xl border border-[#D7E4DD] bg-[#F7FAF8] p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Performance</div>
@@ -362,17 +400,15 @@ if (lastDay === todayDay) {
               <div className="text-xs text-[#6B7A74]">No history yet.</div>
             ) : (
               <ChartSvg
-  days={seriesDays}
-  portfolioRaw={seriesRaw}
-  portfolioY={seriesDayPct} // ✅ percent series
-  live={live}
-/>
+                days={seriesDays}
+                portfolioRaw={seriesRaw}
+                portfolioY={seriesDayPct}
+              />
             )}
           </div>
         </div>
       </div>
 
-      {/* Holdings table (stored list; not used for pie math) */}
       {holdings.length ? (
         <div className="overflow-hidden rounded-2xl border border-[#D7E4DD]">
           <div className="grid grid-cols-3 bg-[#F7FAF8] px-4 py-2 text-xs font-semibold text-[#4B5B55]">
@@ -387,12 +423,21 @@ if (lastDay === todayDay) {
               const dot = colorMap[sym];
               return (
                 <div key={h.id} className="grid grid-cols-3 px-4 py-2 text-sm">
-                  <div className="font-medium flex items-center gap-2">
-                    {dot ? <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dot }} /> : null}
+                  <div className="flex items-center gap-2 font-medium">
+                    {dot ? (
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: dot }}
+                      />
+                    ) : null}
                     {sym}
                   </div>
-                  <div className="text-right">{Number(h.amount || 0).toLocaleString()}</div>
-                  <div className="text-right text-[#6B7A74]">{h.currency || "—"}</div>
+                  <div className="text-right">
+                    {Number(h.amount || 0).toLocaleString()}
+                  </div>
+                  <div className="text-right text-[#6B7A74]">
+                    {h.currency || "—"}
+                  </div>
                 </div>
               );
             })}
@@ -405,7 +450,11 @@ if (lastDay === todayDay) {
   );
 }
 
-function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: number[]; live: PublicLiveValue | null }) {
+function ChartSvg(props: {
+  days: string[];
+  portfolioRaw: number[];
+  portfolioY: number[];
+}) {
   const W = 720;
   const H = 260;
   const PAD_L = 14;
@@ -419,21 +468,22 @@ function ChartSvg(props: { days: string[]; portfolioRaw: number[]; portfolioY: n
   const n = Math.max(props.days.length, 1);
 
   const xAt = (i: number) => {
-    if (n <= 1) return PAD_L;
+    if (n <= 1) return (PAD_L + (W - PAD_R)) / 2;
     return PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R);
   };
 
-  const allVals = useMemo(() => {
-  const all = props.portfolioY.filter((v) => Number.isFinite(v));
-  return all.length ? all : [0];
-}, [props.portfolioY]);
+  const cleanedVals = useMemo(() => {
+    return props.portfolioY.filter((v) => Number.isFinite(v));
+  }, [props.portfolioY]);
 
-const abs = Math.max(...allVals.map((v) => Math.abs(v))) || 1;
+  const abs = useMemo(() => {
+    const maxAbs = Math.max(...cleanedVals.map((v) => Math.abs(v)), 0);
+    return maxAbs < 0.25 ? 0.25 : maxAbs;
+  }, [cleanedVals]);
 
-// ✅ symmetric around 0 so small % moves are visible
-const minY = -abs;
-const maxY = abs;
-const span = maxY - minY || 1;
+  const minY = -abs;
+  const maxY = abs;
+  const span = maxY - minY || 1;
 
   const yAt = (v: number) => {
     const vv = Number.isFinite(v) ? Number(v) : 0;
@@ -445,7 +495,10 @@ const span = maxY - minY || 1;
     const rawStep = sp / Math.max(1, count - 1);
     const pow = Math.pow(10, Math.floor(Math.log10(rawStep)));
     const steps = [1, 2, 5, 10].map((m) => m * pow);
-    const step = steps.reduce((best, s) => (Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best), steps[0]);
+    const step = steps.reduce((best, s) =>
+      Math.abs(s - rawStep) < Math.abs(best - rawStep) ? s : best
+    , steps[0]);
+
     const start = Math.floor(min / step) * step;
     const end = Math.ceil(max / step) * step;
     const out: number[] = [];
@@ -477,8 +530,10 @@ const span = maxY - minY || 1;
         started = false;
         continue;
       }
+
       const x = xAt(i);
       const yy = yAt(v);
+
       if (!started) {
         d += `M ${x} ${yy}`;
         started = true;
@@ -486,57 +541,92 @@ const span = maxY - minY || 1;
         d += ` L ${x} ${yy}`;
       }
     }
+
     return d;
   };
+
+  const points = useMemo(() => {
+    return props.portfolioY
+      .map((v, i) => ({
+        i,
+        v,
+        x: xAt(i),
+        y: yAt(v),
+        valid: Number.isFinite(v),
+      }))
+      .filter((p) => p.valid);
+  }, [props.portfolioY]);
 
   const hoverDay = useMemo(() => {
     if (hoverIdx == null) return "";
     return props.days[clampIdx(hoverIdx, props.days.length)] ?? "";
   }, [hoverIdx, props.days]);
 
-  const hoverRaw = hoverIdx != null ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)] : NaN;
-  const hoverY = hoverIdx != null ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)] : NaN;
+  const hoverRaw =
+    hoverIdx != null
+      ? props.portfolioRaw[clampIdx(hoverIdx, props.portfolioRaw.length)]
+      : NaN;
 
-  // last point uses authoritative live.dayChangePct
-  const hoverDodPct = useMemo(() => {
-  if (hoverIdx == null) return NaN;
-  const idx = clampIdx(hoverIdx, props.portfolioY.length);
-  const v = Number(props.portfolioY[idx]);
-  return Number.isFinite(v) ? v : NaN;
-}, [hoverIdx, props.portfolioY]);
+  const hoverPct =
+    hoverIdx != null
+      ? props.portfolioY[clampIdx(hoverIdx, props.portfolioY.length)]
+      : NaN;
+
   const onMove = (e: React.MouseEvent) => {
     const el = wrapRef.current;
     if (!el) return;
+
     const r = el.getBoundingClientRect();
     const x = e.clientX - r.left;
     const plotW = r.width;
     if (plotW <= 0) return;
+
     const t = (x / plotW) * (n - 1);
     const idx = clampIdx(Math.round(t), n);
     setHoverIdx(idx);
   };
 
+  const singlePoint = points.length === 1;
+  const zeroLineY = yAt(0);
+
   return (
-    <div ref={wrapRef} className="relative" onMouseMove={onMove} onMouseLeave={() => setHoverIdx(null)}>
+    <div
+      ref={wrapRef}
+      className="relative"
+      onMouseMove={onMove}
+      onMouseLeave={() => setHoverIdx(null)}
+    >
       {hoverIdx != null ? (
         <div className="pointer-events-none absolute left-3 top-2 rounded-xl border border-[#D7E4DD] bg-white px-3 py-2 text-xs shadow-sm">
           <div className="font-medium">{hoverDay}</div>
           <div className="text-[#6B7A74]">
-            Day: <span className="font-medium">{fmtPct(hoverDodPct)}</span>
+            Day: <span className="font-medium">{fmtPct(Number(hoverPct))}</span>
           </div>
-         
-
-          <div className="text-[#6B7A74]">Total: ${fmtMoney(hoverRaw)}</div>
+          <div className="text-[#6B7A74]">
+            Total: ${fmtMoney(Number(hoverRaw))} USD
+          </div>
         </div>
       ) : null}
 
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-64 select-none">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-64 w-full select-none">
         {yTicks.map((v, i) => {
           const y = yAt(v);
           return (
             <g key={`yt-${i}`}>
-              <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y} stroke="#D7E4DD" strokeWidth="1" />
-              <text x={W - PAD_R + 6} y={y + 3} fontSize="10" fill="#6B7A74">
+              <line
+                x1={PAD_L}
+                y1={y}
+                x2={W - PAD_R}
+                y2={y}
+                stroke="#D7E4DD"
+                strokeWidth="1"
+              />
+              <text
+                x={W - PAD_R + 6}
+                y={y + 3}
+                fontSize="10"
+                fill="#6B7A74"
+              >
                 {fmtPct(v)}
               </text>
             </g>
@@ -548,18 +638,67 @@ const span = maxY - minY || 1;
           const label = shortDay(props.days[clampIdx(i, props.days.length)] || "");
           return (
             <g key={`xt-${i}`}>
-              <line x1={x} y1={H - PAD_B} x2={x} y2={H - PAD_B + 4} stroke="#D7E4DD" strokeWidth="1" />
-              <text x={x} y={H - 10} fontSize="10" fill="#6B7A74" textAnchor="middle">
+              <line
+                x1={x}
+                y1={H - PAD_B}
+                x2={x}
+                y2={H - PAD_B + 4}
+                stroke="#D7E4DD"
+                strokeWidth="1"
+              />
+              <text
+                x={x}
+                y={H - 10}
+                fontSize="10"
+                fill="#6B7A74"
+                textAnchor="middle"
+              >
                 {label}
               </text>
             </g>
           );
         })}
 
-        <path d={pathFor(props.portfolioY)} fill="none" stroke="#0B0F0E" strokeWidth="2" />
+        {singlePoint ? (
+          <line
+            x1={PAD_L}
+            y1={zeroLineY}
+            x2={W - PAD_R}
+            y2={zeroLineY}
+            stroke="#CBD5CF"
+            strokeDasharray="4 4"
+            strokeWidth="1"
+          />
+        ) : null}
+
+        <path
+          d={pathFor(props.portfolioY)}
+          fill="none"
+          stroke="#0B0F0E"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {points.map((p) => (
+          <circle
+            key={`pt-${p.i}`}
+            cx={p.x}
+            cy={p.y}
+            r={hoverIdx === p.i ? 4.5 : 3}
+            fill="#0B0F0E"
+          />
+        ))}
 
         {hoverIdx != null ? (
-          <line x1={xAt(hoverIdx)} y1={PAD_T} x2={xAt(hoverIdx)} y2={H - PAD_B} stroke="#9CA3AF" strokeWidth="1" />
+          <line
+            x1={xAt(hoverIdx)}
+            y1={PAD_T}
+            x2={xAt(hoverIdx)}
+            y2={H - PAD_B}
+            stroke="#9CA3AF"
+            strokeWidth="1"
+          />
         ) : null}
       </svg>
     </div>
