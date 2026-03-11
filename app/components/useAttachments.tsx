@@ -24,6 +24,9 @@ async function uploadOne(file: File, signal?: AbortSignal): Promise<UploadRes> {
     body: fd,
     credentials: "include",
     signal,
+    headers: {
+      "Idempotency-Key": crypto.randomUUID(),
+    },
   });
 
   const json = (await res.json().catch(() => null)) as any;

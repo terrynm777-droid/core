@@ -345,22 +345,32 @@ export default function PortfolioEditor() {
 
     try {
       const metaRes = await fetch("/api/portfolio", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, is_public: isPublic }),
-      });
-      await fetchJsonOrThrow(metaRes);
+  method: "PATCH",
+  headers: {
+    "Content-Type": "application/json",
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+  body: JSON.stringify({ name, is_public: isPublic }),
+});
+await fetchJsonOrThrow(metaRes);
 
-      // NOTE: backend must accept buy_price or ignore it safely.
-      const putRes = await fetch("/api/portfolio", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ holdings }),
-      });
-      await fetchJsonOrThrow(putRes);
+const putRes = await fetch("/api/portfolio", {
+  method: "PUT",
+  headers: {
+    "Content-Type": "application/json",
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+  body: JSON.stringify({ holdings }),
+});
+await fetchJsonOrThrow(putRes);
 
-      // create one snapshot after saving
-      await fetch("/api/portfolio/snapshot", { method: "POST" }).catch(() => {});
+// create one snapshot after saving
+await fetch("/api/portfolio/snapshot", {
+  method: "POST",
+  headers: {
+    "Idempotency-Key": crypto.randomUUID(),
+  },
+}).catch(() => {});
 
       setOk("Saved.");
       await refreshLive();
