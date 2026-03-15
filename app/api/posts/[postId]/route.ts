@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const supabase = createClient();
-
 export const runtime = "nodejs";
 
 async function resolveParams<T extends object>(p: any): Promise<T> {
@@ -18,7 +16,7 @@ export async function GET(req: NextRequest, context: any) {
 
     if (!postId) return NextResponse.json({ error: "Missing postId" }, { status: 400 });
 
-    const supabase = createClient() as any;
+    const supabase = await createClient() as any;
 
     const { data, error } = await supabase
       .from("posts")
