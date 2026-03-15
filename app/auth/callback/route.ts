@@ -21,14 +21,12 @@ export async function GET(request: NextRequest) {
   const code = url.searchParams.get("code");
   const next = safeNext(url.searchParams.get("next"));
 
-  // If no code, go back to auth
   if (!code) {
     return NextResponse.redirect(
       new URL(`/auth?next=${encodeURIComponent(next)}`, url.origin)
     );
   }
 
-  // IMPORTANT: create response first so we can attach Set-Cookie to it
   const response = NextResponse.redirect(new URL(next, url.origin));
 
   const supabase = createServerClient(
