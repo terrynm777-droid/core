@@ -113,30 +113,38 @@ export default function LessonViewer({
       <h1 className="mt-3 text-3xl font-semibold text-[#0B0F0E]">{title}</h1>
       <p className="mt-4 text-base leading-8 text-[#37413D]">{desc}</p>
 
-      {!!lesson.visuals?.length && (
-        <div className="mt-8 grid gap-5">
-          {lesson.visuals.map((visual) => (
-            <div
-              key={visual.src}
-              className="overflow-hidden rounded-3xl border border-[#D7E4DD] bg-[#F7FAF8]"
-            >
-              <div className="relative aspect-[16/9] w-full">
-                <Image
-                  src={visual.src}
-                  alt={visual.alt}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              {visual.caption ? (
-                <div className="px-4 py-3 text-sm text-[#37413D]">
-                  {visual.caption}
-                </div>
-              ) : null}
+            {!!lesson.visuals?.length && (
+  <div className="mt-8 grid gap-5">
+    {lesson.visuals.map((visual) => {
+      const visualSrc = lang === "ja" && visual.srcJa ? visual.srcJa : visual.src;
+      const visualAlt = lang === "ja" && visual.altJa ? visual.altJa : visual.alt;
+      const visualCaption =
+        lang === "ja" && visual.captionJa ? visual.captionJa : visual.caption;
+
+      return (
+        <div
+          key={`${lesson.slug}-${visualSrc}`}
+          className="overflow-hidden rounded-3xl border border-[#D7E4DD] bg-[#F7FAF8]"
+        >
+          <div className="relative aspect-[16/9] w-full">
+            <Image
+              src={visualSrc}
+              alt={visualAlt}
+              fill
+              className="object-cover"
+            />
+          </div>
+
+          {visualCaption ? (
+            <div className="px-4 py-3 text-sm text-[#37413D]">
+              {visualCaption}
             </div>
-          ))}
+          ) : null}
         </div>
-      )}
+      );
+    })}
+  </div>
+)}
 
       <div className="mt-8 space-y-4">
         {body.map((p, i) => (

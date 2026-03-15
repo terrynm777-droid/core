@@ -16,6 +16,28 @@ export async function POST(_req: NextRequest) {
 
   const allLevelIds = coreLearnContent.map((level) => level.id);
 
+  const totalLessons = coreLearnContent.reduce(
+    (acc, level) => acc + level.lessons.length,
+    0
+  );
+
+  const { data: lessonRows } = await supabase
+    .from("education_lesson_progress")
+    .select("level_id, lesson_slug, completed")
+    .eq("user_id", auth.user.id)
+    .eq("product_slug", "corelearn")
+    .eq("completed", true);
+
+  const doneLessons = lessonRows?.length ?? 0;
+  const allLessonsComplete = doneLessons === totalLessons && totalLessons > 0;
+
+  if (!allLessonsComplete) {
+    return NextResponse.json(
+      { error: "All lessons must be completed first" },
+      { status: 400 }
+    );
+  }
+
   const { data: quizzes } = await supabase
     .from("education_level_quiz_attempts")
     .select("level_id, passed")
@@ -57,6 +79,7 @@ export async function POST(_req: NextRequest) {
       user_id: auth.user.id,
       product_slug: "corelearn",
       certificate_code: code,
+      issued_at: new Date().toISOString(),
     });
 
   if (error) {

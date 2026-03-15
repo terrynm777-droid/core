@@ -20,7 +20,6 @@ export default async function LevelQuizPage({
   let initialScore: number | null = null;
   let initialTotal: number | null = null;
   let initialPassed = false;
-  let initialCertificateCode: string | null = null;
 
   if (auth?.user) {
     const { data: attempt } = await supabase
@@ -36,16 +35,6 @@ export default async function LevelQuizPage({
       initialTotal = attempt.total;
       initialPassed = attempt.passed;
     }
-
-    const { data: cert } = await supabase
-      .from("education_certificates")
-      .select("certificate_code")
-      .eq("user_id", auth.user.id)
-      .eq("product_slug", "corelearn")
-      .eq("level_id", levelId)
-      .maybeSingle();
-
-    initialCertificateCode = cert?.certificate_code ?? null;
   }
 
   return (
@@ -63,7 +52,7 @@ export default async function LevelQuizPage({
           initialScore={initialScore}
           initialTotal={initialTotal}
           initialPassed={initialPassed}
-          initialCertificateCode={initialCertificateCode}
+          initialCertificateCode={null}
         />
       </div>
     </main>

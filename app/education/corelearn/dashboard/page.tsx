@@ -59,7 +59,14 @@ export default async function CoreLearnDashboardPage() {
   const doneLessons = lessonRows?.length ?? 0;
   const overallPct = totalLessons > 0 ? Math.round((doneLessons / totalLessons) * 100) : 0;
 
-   const courseCompleted = doneLessons === totalLessons && totalLessons > 0;
+   const allLessonsComplete = doneLessons === totalLessons && totalLessons > 0;
+
+const allLevelsPassed = coreLearnContent.every((level) => {
+  const quiz = quizMap.get(level.id) as { passed?: boolean } | undefined;
+  return !!quiz?.passed;
+});
+
+const courseCompleted = allLessonsComplete && allLevelsPassed;
 
   return (
     <main className="min-h-screen bg-[#F7FAF8] px-6 py-10 text-[#0B0F0E]">

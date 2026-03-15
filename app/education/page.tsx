@@ -76,10 +76,10 @@ const plans: Plan[] = [
       "Certificate path",
       "Advanced assessment",
     ],
-    href: "/education/coretest/kentei",
+    href: "/education/coretest",
     cta: "View details",
     priceLabel: "US$100 / 約¥15,000",
-    buyHref: "/checkout/corekentei",
+    buyHref: "/checkout/coretest",
     paid: true,
   },
 ];
